@@ -1264,8 +1264,10 @@ function catDrop(e,targetId){
   save(); renderAll(); toast("הסדר עודכן");
 }
 document.getElementById("addCat").onclick=()=>{
-  state.categories.push({id:"c"+uid(),main:"קטגוריה חדשה",sub:"תת-קטגוריה",annualBudget:0});
+  state.categories.unshift({id:"c"+uid(),main:"קטגוריה חדשה",sub:"תת-קטגוריה",annualBudget:0});
   save(); renderPlanning(); fillMainSelect();
+  const first=document.querySelector("#catTable tbody tr input"); if(first){ first.focus(); first.select(); } // מיקוד בשורה החדשה שבראש
+  toast("נוספה קטגוריה — ערוך אותה למעלה");
 };
 document.getElementById("saveFy").onclick=()=>{
   state.fiscalYear.start=document.getElementById("fyStart").value;
