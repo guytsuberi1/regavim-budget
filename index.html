@@ -104,6 +104,7 @@
   <button data-tab="suppliers">🏷️ סיכום ספקים</button>
   <button data-tab="employees">👤 סיכום עובדים</button>
   <button data-tab="catinv">🔎 חשבוניות לפי קטגוריה</button>
+  <button data-tab="catalog">🗂️ קטלוג תנועות</button>
   <button data-tab="directory">📇 ספקים ואנשי קשר</button>
   <button data-tab="planning">⚙️ תכנון ונתונים</button>
 </nav>
@@ -305,6 +306,19 @@
   </section>
 
   <!-- ===== תכנון ===== -->
+  <section id="catalog" class="tab">
+    <div class="card">
+      <h2>קטלוג תנועות — שיוך קטגוריות</h2>
+      <p class="hint">עבור על התנועות ואשר/שנה את הקטגוריה. השינויים נשמרים מיד. הרשימה ממוינת לפי קטגוריה כדי להקל על הבדיקה. בחירת ראשית מאפסת את התת — בחר תת מתאימה.</p>
+      <div id="catalogCount" class="hint"></div>
+      <div class="scroll">
+        <table id="catalogTable">
+          <thead><tr><th>תאריך</th><th>ספק</th><th>פרטים</th><th>סכום</th><th>קטגוריה ראשית</th><th>תת-קטגוריה</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
   <section id="planning" class="tab">
     <div class="card">
       <h2>שנת התקציב</h2>
@@ -1395,11 +1409,35 @@ document.getElementById("odDisconnect").onclick=async()=>{ fileHandle=null; pend
 
 /* ====== כללי ====== */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+/* ====== קטלוג תנועות: שיוך קטגוריות בעריכה מהירה ====== */
+function catSubsOf(main){ return state.categories.filter(c=>c.main===main).map(c=>c.sub); }
+function renderCatalog(){
+  const tb=document.querySelector("#catalogTable tbody"); if(!tb) return;
+  const list=[...state.transactions].sort((a,b)=>(a.main||"").localeCompare(b.main||"")||(a.sub||"").localeCompare(b.sub||"")||(a.date||"").localeCompare(b.date||""));
+  const mains=mainOrder();
+  document.getElementById("catalogCount").textContent="סה\"כ "+list.length+" תנועות";
+  tb.innerHTML=list.map(t=>{
+    const mainOpts='<option value=""></option>'+mains.map(m=>`<option ${m===t.main?"selected":""}>${esc(m)}</option>`).join("");
+    const subOpts='<option value=""></option>'+catSubsOf(t.main).map(s=>`<option ${s===t.sub?"selected":""}>${esc(s)}</option>`).join("");
+    return `<tr>
+    <td class="num">${esc(t.date)}</td><td>${esc(payee(t))}</td><td>${esc(t.description||"")}</td><td class="num">${ils(t.amount)}</td>
+    <td><select onchange="catSetMain('${t.id}',this)">${mainOpts}</select></td>
+    <td><select class="sub" onchange="catSetSub('${t.id}',this.value)">${subOpts}</select></td></tr>`;
+  }).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--muted)">אין תנועות</td></tr>`;
+}
+function catSetMain(id,sel){
+  const t=state.transactions.find(x=>x.id===id); if(!t) return;
+  t.main=sel.value; t.sub=""; // איפוס התת בעת החלפת ראשית
+  const subSel=sel.closest("tr").querySelector("select.sub");
+  subSel.innerHTML='<option value=""></option>'+catSubsOf(t.main).map(s=>`<option>${esc(s)}</option>`).join("");
+  save(); toast("עודכן");
+}
+function catSetSub(id,val){ const t=state.transactions.find(x=>x.id===id); if(!t) return; t.sub=val; save(); toast("עודכן"); }
 function renderAll(){
   document.getElementById("fyLabel").textContent=state.fiscalYear.start+" — "+state.fiscalYear.end;
   fillMainSelect(); fillSubSelect(); fillSupplierList(); fillPoDatalists();
   renderTxTable(); renderDashboard(); renderSuppliers(); renderEmployees(); renderPlanning(); renderContacts(); renderSuppliersDir();
-  fillCatMain(); fillCatSub(); renderCatInvoices();
+  fillCatMain(); fillCatSub(); renderCatInvoices(); renderCatalog();
 }
 /* ====== חיבור ענן (Supabase) + כניסה ====== */
 const SB_URL="https://dcnndzrdimkogfjsvcku.supabase.co";
