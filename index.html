@@ -316,14 +316,14 @@
     </div>
     <div class="card">
       <h2>קטגוריות ותקציב שנתי</h2>
-      <p class="hint">אפשר לערוך סכומים ישירות בטבלה, להוסיף או למחוק שורות.</p>
+      <p class="hint">אפשר לערוך סכומים ישירות בטבלה, להוסיף או למחוק שורות. ניתן לגרור שורות (אחיזה ב-⠿) כדי לשנות את סדר הקטגוריות ותתי-הקטגוריות.</p>
+      <div class="btnbar" style="margin-bottom:12px"><button class="btn sec mini" id="addCat">➕ הוספת קטגוריה</button></div>
       <div class="scroll">
         <table id="catTable">
-          <thead><tr><th>קטגוריה ראשית</th><th>תת-קטגוריה</th><th>תקציב שנתי (₪)</th><th class="noprint"></th></tr></thead>
+          <thead><tr><th class="noprint" style="width:28px"></th><th>קטגוריה ראשית</th><th>תת-קטגוריה</th><th>תקציב שנתי (₪)</th><th class="noprint"></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
-      <div class="btnbar"><button class="btn sec mini" id="addCat">➕ הוספת קטגוריה</button></div>
     </div>
     <div class="card">
       <h2>סנכרון OneDrive (עבודה משותפת)</h2>
@@ -1230,7 +1230,8 @@ function renderPlanning(){
   document.getElementById("fyStart").value=state.fiscalYear.start;
   document.getElementById("fyEnd").value=state.fiscalYear.end;
   const tb=document.querySelector("#catTable tbody");
-  tb.innerHTML=state.categories.map(c=>`<tr>
+  tb.innerHTML=state.categories.map(c=>`<tr draggable="true" data-id="${c.id}" ondragstart="catDragStart(event,'${c.id}')" ondragover="catDragOver(event)" ondragleave="catDragLeave(event)" ondrop="catDrop(event,'${c.id}')" ondragend="catDragEnd(event)">
+    <td class="noprint" style="cursor:move;text-align:center;color:var(--muted)" title="גרור לשינוי סדר">⠿</td>
     <td><input value="${esc(c.main)}" onchange="updCat('${c.id}','main',this.value)"></td>
     <td><input value="${esc(c.sub)}" onchange="updCat('${c.id}','sub',this.value)"></td>
     <td><input type="number" class="num" value="${c.annualBudget}" onchange="updCat('${c.id}','annualBudget',this.value)"></td>
@@ -1245,6 +1246,22 @@ function delCat(id){
   if(!confirm("למחוק את הקטגוריה?")) return;
   state.categories=state.categories.filter(c=>c.id!==id);
   save(); renderAll(); toast("נמחק");
+}
+/* גרירה לשינוי סדר הקטגוריות */
+let _catDragId=null;
+function catDragStart(e,id){ _catDragId=id; e.currentTarget.style.opacity=".45"; e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",id);}catch(_){} }
+function catDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect="move"; e.currentTarget.style.background="#eef3fa"; }
+function catDragLeave(e){ e.currentTarget.style.background=""; }
+function catDragEnd(e){ _catDragId=null; if(e&&e.currentTarget){ e.currentTarget.style.opacity=""; e.currentTarget.style.background=""; } }
+function catDrop(e,targetId){
+  e.preventDefault(); e.currentTarget.style.background="";
+  if(!_catDragId || _catDragId===targetId){ _catDragId=null; return; }
+  const from=state.categories.findIndex(c=>c.id===_catDragId); if(from<0){ _catDragId=null; return; }
+  const moved=state.categories.splice(from,1)[0];
+  const to=state.categories.findIndex(c=>c.id===targetId); // אינדקס המטרה לאחר ההסרה
+  state.categories.splice(to<0?state.categories.length:to,0,moved); // הכנס לפני שורת המטרה
+  _catDragId=null;
+  save(); renderAll(); toast("הסדר עודכן");
 }
 document.getElementById("addCat").onclick=()=>{
   state.categories.push({id:"c"+uid(),main:"קטגוריה חדשה",sub:"תת-קטגוריה",annualBudget:0});
