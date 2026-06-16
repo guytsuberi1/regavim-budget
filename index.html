@@ -424,7 +424,8 @@ function defaults(){
     poNext: 1001,
     poDefaults: {},
     contacts: [],
-    suppliers: []
+    suppliers: [],
+    geminiKey: ""
   };
 }
 function load(){
@@ -583,9 +584,9 @@ document.getElementById("f_employee").addEventListener("input",function(){
 
 /* ====== מילוי חשבונית אוטומטי ב-AI (Google Gemini, שכבת חינם) ====== */
 const GEMINI_MODEL = "gemini-2.5-flash"; // מודל חינמי של Google; ניתן לשנות במידת הצורך
-const GEMINI_KEY_STORE = "gemini_api_key"; // נשמר רק במחשב הזה, לא מסונכרן
+const GEMINI_KEY_STORE = "gemini_api_key"; // גיבוי מקומי; המפתח מסונכרן דרך state.geminiKey
 
-function getGeminiKey(){ return localStorage.getItem(GEMINI_KEY_STORE) || ""; }
+function getGeminiKey(){ return (typeof state==="object" && state && state.geminiKey) || localStorage.getItem(GEMINI_KEY_STORE) || ""; }
 function askGeminiKey(force){
   const cur = getGeminiKey();
   if(cur && !force) return cur;
@@ -593,11 +594,14 @@ function askGeminiKey(force){
     "1. היכנס ל-  aistudio.google.com/apikey\n"+
     "2. לחץ \"Create API key\"\n"+
     "3. העתק את המפתח והדבק כאן.\n\n"+
-    "המפתח נשמר רק במחשב הזה.";
+    "המפתח יישמר ויסונכרן לכל המכשירים שמחוברים לאותו חשבון.";
   const k = prompt(msg, cur || "");
   if(k===null) return cur; // ביטול — השאר קיים
   const trimmed = k.trim();
-  if(trimmed) localStorage.setItem(GEMINI_KEY_STORE, trimmed);
+  if(trimmed){
+    localStorage.setItem(GEMINI_KEY_STORE, trimmed);
+    if(typeof state==="object" && state){ state.geminiKey = trimmed; if(typeof save==="function") save(); } // סנכרון לענן
+  }
   return trimmed || cur;
 }
 document.getElementById("aiKeyChange").addEventListener("click", e=>{
@@ -1337,6 +1341,9 @@ async function startApp(){
   const cloud=await cloudLoad();
   if(cloud && cloud.categories){ state=cloud; localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
   else { state=defaults(); await cloudSave(); }
+  // מיגרציה חד-פעמית: דחיפת מפתח AI מקומי קיים אל ה-state המסונכרן
+  const _localAiKey=localStorage.getItem(GEMINI_KEY_STORE);
+  if(_localAiKey && !state.geminiKey){ state.geminiKey=_localAiKey; cloudSave(); }
   subscribeRealtime();
   const od=document.getElementById("odStatus"); if(od && od.closest(".card")) od.closest(".card").style.display="none";
   updateUserBar(); resetForm(); renderAll();
