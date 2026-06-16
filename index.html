@@ -27,8 +27,9 @@
   h2{margin:0 0 4px;font-size:19px}
   .hint{color:var(--muted);font-size:13px;margin:0 0 16px}
   label{display:block;font-size:13px;font-weight:600;margin-bottom:5px;color:#374151}
-  input,select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;background:#fff}
-  input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(29,78,137,.12)}
+  input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;background:#fff}
+  textarea{resize:vertical;min-height:42px;line-height:1.5}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(29,78,137,.12)}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
   .btn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:11px 20px;font-size:15px;font-weight:600;cursor:pointer}
   .btn:hover{background:var(--blue-d)}
@@ -150,7 +151,7 @@
           </div>
           <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
             <label style="color:var(--blue);font-size:14px">פרטים להזמנת רכש (לא חובה — יופיעו ב-PDF, ונשמרים לפעם הבאה)</label>
-            <div style="margin-bottom:12px"><label>תיאור / פירוט (יופיע בשורה נפרדת בהזמנה, מתחת ל"בגין...")</label><input id="f_desc" autocomplete="off"></div>
+            <div style="margin-bottom:12px"><label>תיאור / פירוט (אפשר כמה שורות — Enter לשורה חדשה; יופיע בהזמנה מתחת ל"בגין...")</label><textarea id="f_desc" rows="2" autocomplete="off"></textarea></div>
             <div class="grid">
               <div><label>איש קשר לאספקה</label><input id="f_contact" list="contactList" autocomplete="off"><datalist id="contactList"></datalist></div>
               <div><label>טלפון איש קשר</label><input id="f_contactPhone" list="contactPhoneList" autocomplete="off"><datalist id="contactPhoneList"></datalist></div>
@@ -791,7 +792,7 @@ function makePO(id){
   const sigImg=(SIGNATURE && SIGNATURE.indexOf("data:")===0)?`<img src="${SIGNATURE}" style="height:60px" alt="חתימה">`:"";
   const docType=t.docType||"חשבונית מס";
   const line1="בגין "+esc(docType)+" מס: "+esc(t.invoiceNo||"");
-  const line2=t.description?esc(t.description):"";
+  const line2=t.description?esc(t.description).replace(/\n/g,"<br>"):"";
   const sd=supplierDirMap()[t.supplier]||{};
   const mailSubject=encodeURIComponent("הזמנת רכש "+poNum+(t.supplier?(" - "+t.supplier):""));
   const mailBody=encodeURIComponent("מצורפת הזמנת רכש מס' "+poNum+".");
