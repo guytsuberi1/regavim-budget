@@ -122,7 +122,6 @@
           </svg>
         </button>
         <input type="file" id="aiScanFile" accept="image/*,application/pdf,.pdf" style="display:none">
-        <a href="#" id="aiKeyChange" title="החלפת מפתח AI" style="font-size:16px;text-decoration:none;color:var(--muted)">⚙️</a>
         <span id="aiScanStatus" style="font-size:13px"></span>
       </div>
       <p class="hint">בחר סוג הוצאה, מלא את הפרטים ולחץ "שמירה". התנועה תתעדכן מיד בתקציב. אפשר גם ללחוץ על אייקון ה-✦ לקריאת חשבונית אוטומטית.</p>
@@ -604,11 +603,6 @@ function askGeminiKey(force){
   }
   return trimmed || cur;
 }
-document.getElementById("aiKeyChange").addEventListener("click", e=>{
-  e.preventDefault();
-  const before=getGeminiKey(); askGeminiKey(true);
-  if(getGeminiKey()!==before) toast("מפתח ה-AI נשמר");
-});
 document.getElementById("aiScanBtn").addEventListener("click", ()=>{
   if(!askGeminiKey()) return;
   document.getElementById("aiScanFile").click();
@@ -681,7 +675,10 @@ async function geminiExtract(key, mime, b64){
   if(!resp.ok){
     let m = "שגיאת שרת ("+resp.status+")";
     try{ const e=await resp.json(); if(e.error&&e.error.message) m=e.error.message; }catch(_){}
-    if(resp.status===400 && /api key/i.test(m)) m="מפתח ה-API לא תקין — לחץ '⚙️' להזנה מחדש.";
+    if(resp.status===400 && /api key/i.test(m)){
+      try{ localStorage.removeItem(GEMINI_KEY_STORE); if(typeof state==="object" && state){ state.geminiKey=""; if(typeof save==="function") save(); } }catch(_){} // ניקוי מפתח שגוי כדי לבקש חדש בסריקה הבאה
+      m="מפתח ה-API לא תקין — לחץ שוב על אייקון ה-✦ והזן מפתח חדש.";
+    }
     if(resp.status===429) m="חרגת מהמכסה החינמית להיום — נסה שוב מאוחר יותר.";
     throw new Error(m);
   }
