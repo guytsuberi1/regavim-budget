@@ -1299,13 +1299,22 @@ document.getElementById("csvFile").onchange=function(){
 };
 function importCsv(text){
   const rows=parseCsv(text.replace(/^﻿/,"")); if(rows.length<2){ alert("הקובץ ריק"); return; }
-  let added=0;
+  const catKey=(m,s)=>(m||"")+"||"+(s||"");
+  const existing={}; state.categories.forEach(c=>existing[catKey(c.main,c.sub)]=true);
+  let replace=false;
+  if(state.transactions.length){
+    replace=confirm("נמצאו "+state.transactions.length+" תנועות קיימות.\n\nאישור (OK) = למחוק אותן ולהחליף בייבוא (מומלץ — DOKKA הוא המקור המלא).\nביטול (Cancel) = להוסיף את הייבוא לתנועות הקיימות.");
+    if(replace) state.transactions=[];
+  }
+  let added=0, newCats=0;
   for(let i=1;i<rows.length;i++){
     const r=rows[i]; if(!r.length||!r[0]) continue;
-    state.transactions.push({id:uid(),date:r[0]||"",main:r[1]||"",sub:r[2]||"",supplier:r[3]||"",amount:Number((r[4]||"0").replace(/[^\d.-]/g,""))||0,type:r[5]||"הוצאה",invoiceNo:r[6]||"",description:r[7]||""});
+    const main=r[1]||"", sub=r[2]||"";
+    if(main && !existing[catKey(main,sub)]){ state.categories.push({id:"c"+uid(),main:main,sub:sub,annualBudget:0}); existing[catKey(main,sub)]=true; newCats++; } // יצירת קטגוריה חסרה אוטומטית
+    state.transactions.push({id:uid(),date:r[0]||"",main:main,sub:sub,supplier:r[3]||"",amount:Number((r[4]||"0").replace(/[^\d.-]/g,""))||0,type:r[5]||"הוצאה",invoiceNo:r[6]||"",description:r[7]||""});
     added++;
   }
-  save(); renderAll(); toast(added+" תנועות יובאו");
+  save(); renderAll(); toast(added+" תנועות יובאו"+(newCats?(" · "+newCats+" קטגוריות חדשות"):"")+(replace?" · הקיימות הוחלפו":""));
 }
 function parseCsv(text){
   const rows=[]; let row=[],cur="",q=false;
