@@ -821,7 +821,7 @@ function makePO(id){
   .bar{position:fixed;top:0;left:0;right:0;background:#1d4e89;color:#fff;padding:10px;text-align:center}
   .bar button{font-size:15px;padding:8px 22px;margin:0 6px;border:none;border-radius:6px;cursor:pointer;font-weight:700}
   .bar .p{background:#fff;color:#1d4e89} .bar .c{background:transparent;color:#fff;border:1px solid #fff}
-  @media print{.bar{display:none}.page{box-shadow:none;margin:0;width:auto;min-height:0}body{background:#fff}}
+  @media print{.bar{display:none}.page{box-shadow:none;margin:0 !important;width:auto;min-height:0}body{background:#fff}}
   @page{size:A4;margin:10mm}
 </style></head><body>
 <div class="bar">
@@ -871,7 +871,21 @@ function makePO(id){
     <div class="cell"><div class="nm">${esc(t.manager||"")}</div><div class="ln">שם המנהל</div></div>
     <div class="cell"><div class="nm">${sigImg}</div><div class="ln">חתימת המנהל</div></div>
   </div>
-</div></body></html>`;
+</div>
+<script>
+(function(){
+  function fit(){
+    var p=document.querySelector('.page'); if(!p) return;
+    p.style.zoom='1'; var prevMin=p.style.minHeight; p.style.minHeight='0';
+    var avail=1035; var h=p.offsetHeight; // גובה שטח הדפסה A4 ב-CSS px (פחות שולי @page); מקטין אוטומטית כדי להתאים לדף אחד
+    p.style.zoom = h>avail ? (avail/h).toFixed(4) : '1';
+    p.style.minHeight=prevMin;
+  }
+  window.addEventListener('load',fit);
+  window.addEventListener('beforeprint',fit);
+})();
+</script>
+</body></html>`;
   const w=window.open("","_blank");
   if(!w){ alert("הדפדפן חסם את חלון ההזמנה. אפשר חלונות קופצים (pop-ups) לאתר ונסה שוב."); return; }
   w.document.write(html); w.document.close();
@@ -912,7 +926,7 @@ function makeReimburse(id){
   .bar{position:fixed;top:0;left:0;right:0;background:#1d4e89;color:#fff;padding:10px;text-align:center}
   .bar button{font-size:15px;padding:8px 22px;margin:0 6px;border:none;border-radius:6px;cursor:pointer;font-weight:700}
   .bar .p{background:#fff;color:#1d4e89} .bar .c{background:transparent;color:#fff;border:1px solid #fff}
-  @media print{.bar{display:none}.page{box-shadow:none;margin:0;width:auto;min-height:0}body{background:#fff}}
+  @media print{.bar{display:none}.page{box-shadow:none;margin:0 !important;width:auto;min-height:0}body{background:#fff}}
   @page{size:A4;margin:10mm}
 </style></head><body>
 <div class="bar">
