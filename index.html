@@ -1302,7 +1302,7 @@ function importCsv(text){
   let added=0;
   for(let i=1;i<rows.length;i++){
     const r=rows[i]; if(!r.length||!r[0]) continue;
-    state.transactions.push({id:uid(),date:r[0]||"",main:r[1]||"",sub:r[2]||"",supplier:r[3]||"",amount:Number((r[4]||"0").replace(/[^\d.-]/g,""))||0,type:r[5]||"הוצאה",invoiceNo:r[6]||""});
+    state.transactions.push({id:uid(),date:r[0]||"",main:r[1]||"",sub:r[2]||"",supplier:r[3]||"",amount:Number((r[4]||"0").replace(/[^\d.-]/g,""))||0,type:r[5]||"הוצאה",invoiceNo:r[6]||"",description:r[7]||""});
     added++;
   }
   save(); renderAll(); toast(added+" תנועות יובאו");
