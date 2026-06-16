@@ -772,6 +772,42 @@ function editTx(id){
   document.getElementById("entry").classList.add("active");
   window.scrollTo({top:0,behavior:"smooth"});
 }
+function duplicateTx(id){
+  const t=state.transactions.find(x=>x.id===id); if(!t) return;
+  const kind=t.kind||"invoice";
+  document.querySelector('input[name="kind"][value="'+kind+'"]').checked=true;
+  applyKind();
+  document.getElementById("editId").value=""; // תנועה חדשה — לא עריכה
+  document.getElementById("f_date").value=t.date;
+  document.getElementById("f_main").value=t.main; fillSubSelect();
+  document.getElementById("f_sub").value=t.sub;
+  document.getElementById("f_amount").value=t.amount;
+  if(kind==="invoice"){
+    document.getElementById("f_supplier").value=t.supplier||"";
+    document.getElementById("f_invoice").value=""; // ניקוי מספר חשבונית בשכפול
+    document.getElementById("f_docType").value=t.docType||"חשבונית מס";
+    document.getElementById("f_desc").value=t.description||"";
+    document.getElementById("f_contact").value=t.contact||"";
+    document.getElementById("f_contactPhone").value=t.contactPhone||"";
+    document.getElementById("f_supplyBy").value=t.supplyBy||"";
+    document.getElementById("f_issuer").value=t.issuer||"";
+    document.getElementById("f_orderer").value=t.orderer||"";
+    document.getElementById("f_manager").value=t.manager||"";
+  }else{
+    document.getElementById("f_employee").value=t.employee||"";
+    document.getElementById("f_empId").value=t.employeeId||"";
+    document.getElementById("f_purpose").value=t.purpose||"";
+    document.getElementById("f_method").value=t.method||"משכורת";
+  }
+  document.getElementById("cancelEdit").style.display="none";
+  document.getElementById("saveBtn").textContent="שמירה";
+  document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelector('nav button[data-tab="entry"]').classList.add("active");
+  document.getElementById("entry").classList.add("active");
+  window.scrollTo({top:0,behavior:"smooth"});
+  toast(kind==="invoice"?"שוכפל — הזן מספר חשבונית ושמור כתנועה חדשה":"שוכפל — בדוק, תקן ושמור כתנועה חדשה");
+}
 function delTx(id){
   if(!confirm("למחוק את התנועה?")) return;
   state.transactions=state.transactions.filter(t=>t.id!==id);
@@ -971,6 +1007,7 @@ function renderTxTable(){
     <td>${(t.kind||"invoice")==="reimburse"?"👤 ":"🧾 "}${esc(payee(t))}</td><td class="num">${ils(t.amount)}</td><td class="num">${esc(t.invoiceNo||"")}</td>
     <td class="noprint"><button class="btn mini sec" onclick="makeDoc('${t.id}')" title="הפקת מסמך PDF">${(t.kind||"invoice")==="reimburse"?"👤":"🧾"}</button>
     <button class="btn mini sec" onclick="editTx('${t.id}')" title="עריכה">✎</button>
+    <button class="btn mini sec" onclick="duplicateTx('${t.id}')" title="שכפול לתנועה חדשה">⧉</button>
     <button class="btn danger" onclick="delTx('${t.id}')">מחק</button></td></tr>`).join("")
     || `<tr><td colspan="7" style="text-align:center;color:var(--muted)">עדיין אין תנועות — הזן את הראשונה למעלה</td></tr>`;
 }
