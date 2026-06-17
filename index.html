@@ -78,6 +78,15 @@
   .dot{width:12px;height:12px;border-radius:3px;display:inline-block}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:12px 22px;border-radius:8px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:99}
   .toast.show{opacity:1}
+  .usermenu{position:relative}
+  .avatar{width:38px;height:38px;border-radius:50%;background:#e2e8f0;color:#475569;border:none;font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .avatar:hover{background:#cbd5e1}
+  .usermenu-pop{position:absolute;top:46px;left:0;min-width:200px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(16,24,40,.14);padding:6px;display:none;z-index:60}
+  .usermenu-pop.open{display:block}
+  .um-email{font-size:12px;color:var(--muted);padding:8px 12px 8px;border-bottom:1px solid var(--line);margin-bottom:4px;direction:ltr;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .um-item{display:flex;align-items:center;gap:9px;width:100%;background:transparent;border:none;text-align:right;padding:9px 12px;font-size:14px;font-family:inherit;color:var(--text);cursor:pointer;border-radius:8px}
+  .um-item:hover{background:var(--bg)}
+  .um-item.um-logout{color:var(--red)}
   .scroll{overflow-x:auto}
   .right{text-align:left}
   @media print{.sidebar,header .sub,.noprint{display:none}.card{box-shadow:none}.layout{display:block}main{max-width:100%}}
@@ -1507,12 +1516,34 @@ async function startApp(){
   const od=document.getElementById("odStatus"); if(od && od.closest(".card")) od.closest(".card").style.display="none";
   updateUserBar(); resetForm(); renderAll();
 }
+let _userEmail="";
 async function updateUserBar(){
   try{ const { data:{ user } }=await sb.auth.getUser();
     const es=document.getElementById("headerSync");
-    if(es && user){ es.innerHTML='<span style="color:#bbf7d0;font-size:13px;margin-left:10px">🟢 '+esc(user.email)+'</span><button onclick="doLogout()" style="background:#fff;color:#1d4e89;border:none;border-radius:6px;padding:7px 14px;font-weight:700;cursor:pointer">יציאה</button>'; }
+    if(es && user){
+      _userEmail=user.email||"";
+      const ini=userInitials(user);
+      es.innerHTML='<div class="usermenu">'
+        +'<button class="avatar" id="avatarBtn" aria-label="תפריט משתמש" title="'+esc(_userEmail)+'">'+esc(ini)+'</button>'
+        +'<div class="usermenu-pop" id="userPop">'
+          +'<div class="um-email">'+esc(_userEmail)+'</div>'
+          +'<button class="um-item" onclick="umProfile()">👤 הפרופיל שלי</button>'
+          +'<button class="um-item um-logout" onclick="doLogout()">↩️ התנתקות</button>'
+        +'</div></div>';
+      const ab=document.getElementById("avatarBtn"), pop=document.getElementById("userPop");
+      if(ab&&pop){
+        ab.onclick=function(e){ e.stopPropagation(); pop.classList.toggle("open"); };
+        document.addEventListener("click",function(){ pop.classList.remove("open"); });
+      }
+    }
   }catch(e){}
 }
+function userInitials(user){
+  const n=(user.user_metadata&&(user.user_metadata.full_name||user.user_metadata.name))||"";
+  if(n.trim()){ const p=n.trim().split(/\s+/); return (p[0].charAt(0)+(p[1]?p[1].charAt(0):"")).toUpperCase(); }
+  return ((user.email||"?").trim().charAt(0)||"?").toUpperCase();
+}
+function umProfile(){ toast("מחובר כ־ "+_userEmail); }
 async function doLogout(){ await sb.auth.signOut(); location.reload(); }
 async function doLogin(){
   const email=document.getElementById("loginEmail").value.trim(), pass=document.getElementById("loginPass").value;
