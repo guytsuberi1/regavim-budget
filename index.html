@@ -156,6 +156,8 @@
   @media (max-width:640px){ .ws-month-grid{grid-template-columns:repeat(3,1fr)} }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div id="loginOverlay">
@@ -1101,9 +1103,7 @@ function makePO(id){
 })();
 <\/script>
 </body></html>`;
-  const w=window.open("","_blank");
-  if(!w){ alert("הדפדפן חסם את חלון ההזמנה. אפשר חלונות קופצים (pop-ups) לאתר ונסה שוב."); return; }
-  w.document.write(html); w.document.close();
+  downloadDocPdf(html, "הזמנת רכש "+poNum+(t.supplier?(" - "+t.supplier):"")+".pdf");
   renderTxTable();
 }
 
@@ -1169,9 +1169,50 @@ function makeReimburse(id){
     <div class="cell"><div class="nm"></div><div class="ln">חתימת אדית</div></div>
   </div>
 </div></body></html>`;
+  downloadDocPdf(html, "החזר לעובד"+(t.employee?(" - "+t.employee):"")+".pdf");
+}
+
+/* ====== הורדת מסמך כ-PDF (html2canvas + jsPDF) ====== */
+function docFallbackWindow(html){
   const w=window.open("","_blank");
   if(!w){ alert("הדפדפן חסם את החלון. אפשר חלונות קופצים (pop-ups) ונסה שוב."); return; }
   w.document.write(html); w.document.close();
+}
+function downloadDocPdf(html, filename){
+  filename=(filename||"מסמך.pdf").replace(/[\\/:*?"<>|]/g,"-");
+  const hasLibs = window.html2canvas && window.jspdf && window.jspdf.jsPDF;
+  if(!hasLibs){ toast("מנוע ה-PDF עדיין נטען — נפתח חלון הדפסה"); docFallbackWindow(html); return; }
+  const ifr=document.createElement("iframe");
+  ifr.setAttribute("aria-hidden","true");
+  ifr.style.cssText="position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;background:#fff";
+  document.body.appendChild(ifr);
+  const doc=ifr.contentWindow.document;
+  let done=false;
+  const cleanup=()=>{ try{ ifr.remove(); }catch(e){} };
+  const run=()=>{
+    if(done) return; done=true;
+    const bar=doc.querySelector(".bar"); if(bar) bar.remove();
+    const page=doc.querySelector(".page");
+    if(!page){ cleanup(); toast("שגיאה בהכנת המסמך — נפתח חלון הדפסה"); docFallbackWindow(html); return; }
+    page.style.zoom="1"; page.style.margin="0"; page.style.marginTop="0"; page.style.boxShadow="none";
+    window.html2canvas(page,{scale:2,backgroundColor:"#ffffff",useCORS:true,logging:false,
+      windowWidth:page.scrollWidth,windowHeight:page.scrollHeight}).then(canvas=>{
+      const { jsPDF }=window.jspdf;
+      const pdf=new jsPDF("p","mm","a4");
+      const pw=210, ph=297;
+      let iw=pw, ih=canvas.height*pw/canvas.width;
+      if(ih>ph){ ih=ph; iw=canvas.width*ph/canvas.height; }
+      pdf.addImage(canvas.toDataURL("image/jpeg",0.95),"JPEG",(pw-iw)/2,0,iw,ih);
+      pdf.save(filename);
+      cleanup(); toast("📄 הקובץ הורד");
+    }).catch(err=>{ console.error(err); cleanup(); toast("לא הצלחתי ליצור PDF — נפתח חלון הדפסה"); docFallbackWindow(html); });
+  };
+  doc.open(); doc.write(html); doc.close();
+  ifr.onload=()=>{ const w=ifr.contentWindow;
+    if(w.document.fonts && w.document.fonts.ready){ w.document.fonts.ready.then(()=>setTimeout(run,80)); }
+    else setTimeout(run,150);
+  };
+  setTimeout(run, 900); // גיבוי אם אירוע load לא נורה
 }
 
 function renderTxTable(){
