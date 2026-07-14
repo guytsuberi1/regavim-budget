@@ -140,8 +140,24 @@
     .chart-val,.mbar-val{font-size:11px}
     .mbar-row{grid-template-columns:64px 1fr 86px}
   }
+  /* ===== גיליון ניהול ===== */
+  .ws-num{width:90px;padding:5px 7px;text-align:left;direction:ltr;font-variant-numeric:tabular-nums}
+  .ws-txt{width:110px;padding:5px 7px}
+  .ws-txt.wide{width:190px}
+  #wsTable input{border:1px solid #d7dee8;border-radius:6px;font-size:13px;background:#fff}
+  #wsTable input:focus{border-color:var(--teal);outline:none}
+  #wsTable .main-row input{font-weight:400}
+  .ws-detail>td{background:#f8fafc;padding:0}
+  .ws-detail-inner{padding:12px 10px}
+  .ws-detail-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .ws-month-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+  .ws-month{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#475569}
+  .ws-month .ws-num{width:100%}
+  @media (max-width:640px){ .ws-month-grid{grid-template-columns:repeat(3,1fr)} }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div id="loginOverlay">
@@ -171,6 +187,7 @@
 <nav>
   <button data-tab="entry" class="active">➕ הזנת חשבונית</button>
   <button data-tab="dashboard">📊 תקציב מול ביצוע</button>
+  <button data-tab="worksheet">📋 גיליון ניהול</button>
   <button data-tab="suppliers">🏷️ סיכום ספקים</button>
   <button data-tab="employees">👤 סיכום עובדים</button>
   <button data-tab="catinv">🔎 חשבוניות לפי קטגוריה</button>
@@ -309,6 +326,35 @@
       <p class="hint">הוצאה בפועל בכל חודש בשנת התקציב. הקו האנכי = תקציב חודשי ממוצע (תקציב שנתי ÷ 12).</p>
       <div class="stat" id="monthStats" style="margin-bottom:12px"></div>
       <div id="monthlyBars"></div>
+    </div>
+  </section>
+
+  <!-- ===== גיליון ניהול ===== -->
+  <section id="worksheet" class="tab">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">📋 גיליון ניהול מפורט</h2>
+        <div class="btnbar noprint" style="margin:0">
+          <button class="btn sec mini" onclick="wsExportCsv()" title="ייצוא ל-CSV (Excel)" style="font-size:18px;padding:6px 10px">⬇️</button>
+          <button class="btn sec mini" onclick="window.print()" title="הדפסה" style="font-size:18px;padding:6px 10px">🖨️</button>
+        </div>
+      </div>
+      <p class="hint">עריכה ישירה של תקציב שנתי, אחראי והערה לכל סעיף. לחצן 📅 פותח פיזור חודשי לסעיף. "התקדמות" = ביצוע מול הקצב הראוי עד היום · "תחזית" = הערכת סוף שנה לפי קצב ההוצאה.</p>
+      <div class="scroll">
+        <table id="wsTable">
+          <thead><tr><th>סעיף</th><th>תקציב שנתי</th><th>אחראי</th><th>הערה</th><th>ביצוע</th><th>יתרה</th><th>התקדמות</th><th>תחזית</th></tr></thead>
+          <tbody id="wsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">מתוכנן מול בפועל — חודשי</h2>
+        <div style="min-width:220px"><label>קטגוריה</label><select id="wsScope" onchange="renderWsMonthly()"></select></div>
+      </div>
+      <p class="hint">הפס הבהיר = מתוכנן לחודש (מהפיזור החודשי שהגדרת) · הפס הצבעוני = הוצאה בפועל (🟢 עד המתוכנן · 🔴 מעבר למתוכנן).</p>
+      <div id="wsMonthly" class="dash-chart"></div>
     </div>
   </section>
 
@@ -547,8 +593,8 @@ function defaults(){
   };
 }
 function load(){
-  try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.categories) return s; }catch(e){}
-  return defaults();
+  try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.categories) return ensureFields(s); }catch(e){}
+  return ensureFields(defaults());
 }
 function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(state)); if(typeof applyingRemote!=="undefined" && applyingRemote) return; if(typeof scheduleCloudSave==="function") scheduleCloudSave(); }
 
@@ -1057,9 +1103,7 @@ function makePO(id){
 })();
 <\/script>
 </body></html>`;
-  const w=window.open("","_blank");
-  if(!w){ alert("הדפדפן חסם את חלון ההזמנה. אפשר חלונות קופצים (pop-ups) לאתר ונסה שוב."); return; }
-  w.document.write(html); w.document.close();
+  downloadDocPdf(html, "הזמנת רכש "+poNum+(t.supplier?(" - "+t.supplier):"")+".pdf");
   renderTxTable();
 }
 
@@ -1125,9 +1169,50 @@ function makeReimburse(id){
     <div class="cell"><div class="nm"></div><div class="ln">חתימת אדית</div></div>
   </div>
 </div></body></html>`;
+  downloadDocPdf(html, "החזר לעובד"+(t.employee?(" - "+t.employee):"")+".pdf");
+}
+
+/* ====== הורדת מסמך כ-PDF (html2canvas + jsPDF) ====== */
+function docFallbackWindow(html){
   const w=window.open("","_blank");
   if(!w){ alert("הדפדפן חסם את החלון. אפשר חלונות קופצים (pop-ups) ונסה שוב."); return; }
   w.document.write(html); w.document.close();
+}
+function downloadDocPdf(html, filename){
+  filename=(filename||"מסמך.pdf").replace(/[\\/:*?"<>|]/g,"-");
+  const hasLibs = window.html2canvas && window.jspdf && window.jspdf.jsPDF;
+  if(!hasLibs){ toast("מנוע ה-PDF עדיין נטען — נפתח חלון הדפסה"); docFallbackWindow(html); return; }
+  const ifr=document.createElement("iframe");
+  ifr.setAttribute("aria-hidden","true");
+  ifr.style.cssText="position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;background:#fff";
+  document.body.appendChild(ifr);
+  const doc=ifr.contentWindow.document;
+  let done=false;
+  const cleanup=()=>{ try{ ifr.remove(); }catch(e){} };
+  const run=()=>{
+    if(done) return; done=true;
+    const bar=doc.querySelector(".bar"); if(bar) bar.remove();
+    const page=doc.querySelector(".page");
+    if(!page){ cleanup(); toast("שגיאה בהכנת המסמך — נפתח חלון הדפסה"); docFallbackWindow(html); return; }
+    page.style.zoom="1"; page.style.margin="0"; page.style.marginTop="0"; page.style.boxShadow="none";
+    window.html2canvas(page,{scale:2,backgroundColor:"#ffffff",useCORS:true,logging:false,
+      windowWidth:page.scrollWidth,windowHeight:page.scrollHeight}).then(canvas=>{
+      const { jsPDF }=window.jspdf;
+      const pdf=new jsPDF("p","mm","a4");
+      const pw=210, ph=297;
+      let iw=pw, ih=canvas.height*pw/canvas.width;
+      if(ih>ph){ ih=ph; iw=canvas.width*ph/canvas.height; }
+      pdf.addImage(canvas.toDataURL("image/jpeg",0.95),"JPEG",(pw-iw)/2,0,iw,ih);
+      pdf.save(filename);
+      cleanup(); toast("📄 הקובץ הורד");
+    }).catch(err=>{ console.error(err); cleanup(); toast("לא הצלחתי ליצור PDF — נפתח חלון הדפסה"); docFallbackWindow(html); });
+  };
+  doc.open(); doc.write(html); doc.close();
+  ifr.onload=()=>{ const w=ifr.contentWindow;
+    if(w.document.fonts && w.document.fonts.ready){ w.document.fonts.ready.then(()=>setTimeout(run,80)); }
+    else setTimeout(run,150);
+  };
+  setTimeout(run, 900); // גיבוי אם אירוע load לא נורה
 }
 
 function renderTxTable(){
@@ -1322,6 +1407,152 @@ function renderMonthly(){
       <div class="mbar-val">${ils(v)}</div>
     </div>`;
   }).join("");
+}
+
+/* ====== גיליון ניהול מפורט ====== */
+function ensureFields(s){
+  if(!s || typeof s!=="object") return s;
+  if(!Array.isArray(s.commitments)) s.commitments=[];
+  return s;
+}
+function wsMonths(){ return fyMonths(); }
+function monthlyPlanOf(c, n){
+  if(Array.isArray(c.monthlyPlan) && c.monthlyPlan.length===n) return c.monthlyPlan.map(x=>Number(x)||0);
+  const even=(Number(c.annualBudget)||0)/n;
+  return Array.from({length:n},()=>even);
+}
+function actualByMonthSub(){
+  const m={};
+  for(const t of state.transactions){
+    const k=(t.main||"")+"||"+(t.sub||""), ym=(t.date||"").slice(0,7);
+    if(!m[k]) m[k]={};
+    m[k][ym]=(m[k][ym]||0)+Number(t.amount||0);
+  }
+  return m;
+}
+function wsToggle(id){
+  const r=document.getElementById("wsd-"+id); if(!r) return;
+  r.style.display=(r.style.display==="table-row")?"none":"table-row";
+}
+function updCatField(id, field, val){
+  const c=state.categories.find(x=>x.id===id); if(!c) return;
+  if(field==="annualBudget"){ c.annualBudget=Number(val)||0; save(); renderWorksheet(); renderDashboard(); renderPlanning(); }
+  else { c[field]=val.trim(); save(); }
+}
+function wsPlanLabel(c){
+  const n=wsMonths().length, plan=monthlyPlanOf(c,n), planSum=plan.reduce((s,x)=>s+x,0), annual=Number(c.annualBudget)||0;
+  return `סה"כ מתוכנן: ${ils(planSum)} · שנתי: ${ils(annual)}${Math.abs(planSum-annual)>1?` · <span class="neg">פער ${ils(planSum-annual)}</span>`:""}`;
+}
+function setMonthlyPlan(id, idx, val){
+  const c=state.categories.find(x=>x.id===id); if(!c) return;
+  const n=wsMonths().length, arr=monthlyPlanOf(c,n).slice();
+  arr[idx]=Number(val)||0; c.monthlyPlan=arr; save();
+  const lbl=document.getElementById("wsplan-"+id); if(lbl) lbl.innerHTML=wsPlanLabel(c);
+  renderWsMonthly();
+}
+function spreadEven(id){
+  const c=state.categories.find(x=>x.id===id); if(!c) return;
+  const n=wsMonths().length, even=(Number(c.annualBudget)||0)/n;
+  c.monthlyPlan=Array.from({length:n},()=>even); save();
+  const detail=document.getElementById("wsd-"+id);
+  if(detail) detail.querySelectorAll("input.ws-num").forEach(inp=>{ inp.value=Math.round(even); });
+  const lbl=document.getElementById("wsplan-"+id); if(lbl) lbl.innerHTML=wsPlanLabel(c);
+  renderWsMonthly();
+}
+function renderWorksheet(){
+  const host=document.getElementById("wsBody"); if(!host) return;
+  const frac=fyFraction(), actual=actualBySub(), months=wsMonths(), mains=mainOrder();
+  const scopeSel=document.getElementById("wsScope");
+  if(scopeSel && scopeSel.options.length===0)
+    scopeSel.innerHTML='<option value="">כל הקטגוריות</option>'+mains.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join("");
+  host.innerHTML="";
+  let gB=0,gA=0;
+  for(const main of mains){
+    const cats=state.categories.filter(c=>c.main===main);
+    let mB=0,mA=0;
+    const rows=[];
+    for(const c of cats){
+      const a=actual[c.main+"||"+c.sub]||0, annual=Number(c.annualBudget)||0;
+      mB+=annual; mA+=a;
+      const plan=monthlyPlanOf(c, months.length);
+      rows.push(`<tr>
+        <td style="padding-inline-start:20px">${esc(c.sub)}
+          <button class="btn mini sec" onclick="wsToggle('${c.id}')" title="פיזור חודשי" style="padding:2px 7px">📅</button></td>
+        <td class="num"><input class="ws-num" type="number" min="0" step="any" value="${annual}" onchange="updCatField('${c.id}','annualBudget',this.value)"></td>
+        <td><input class="ws-txt" value="${esc(c.owner||"")}" placeholder="—" onchange="updCatField('${c.id}','owner',this.value)"></td>
+        <td><input class="ws-txt wide" value="${esc(c.note||"")}" placeholder="—" onchange="updCatField('${c.id}','note',this.value)"></td>
+        <td class="num">${ils(a)}</td>
+        <td class="num ${annual-a<0?"neg":""}">${ils(annual-a)}</td>
+        <td>${progressBar(a,annual,frac)}</td>
+        <td class="num">${projCell(a,annual,frac)}</td>
+      </tr>
+      <tr id="wsd-${c.id}" class="ws-detail" style="display:none"><td colspan="8">
+        <div class="ws-detail-inner">
+          <div class="ws-detail-head">
+            <strong>פיזור חודשי — ${esc(c.sub)}</strong>
+            <span class="hint" id="wsplan-${c.id}" style="margin:0">${wsPlanLabel(c)}</span>
+            <button class="btn mini sec" onclick="spreadEven('${c.id}')">פזר שווה</button>
+          </div>
+          <div class="ws-month-grid">
+            ${months.map((ym,i)=>`<label class="ws-month"><span>${monthLabel(ym)}</span>
+              <input class="ws-num" type="number" min="0" step="any" value="${Math.round(plan[i])}" onchange="setMonthlyPlan('${c.id}',${i},this.value)"></label>`).join("")}
+          </div>
+        </div>
+      </td></tr>`);
+    }
+    gB+=mB; gA+=mA;
+    host.insertAdjacentHTML("beforeend",
+      `<tr class="main-row"><td>${esc(main)}</td><td class="num">${ils(mB)}</td><td></td><td></td>
+        <td class="num">${ils(mA)}</td><td class="num ${mB-mA<0?"neg":""}">${ils(mB-mA)}</td>
+        <td>${progressBar(mA,mB,frac)}</td><td class="num">${projCell(mA,mB,frac)}</td></tr>`+rows.join(""));
+  }
+  host.insertAdjacentHTML("beforeend",
+    `<tr class="grand"><td>סה"כ כללי</td><td class="num">${ils(gB)}</td><td></td><td></td>
+      <td class="num">${ils(gA)}</td><td class="num">${ils(gB-gA)}</td>
+      <td>${progressBar(gA,gB,frac)}</td><td class="num">${projCell(gA,gB,frac)}</td></tr>`);
+  renderWsMonthly();
+}
+function renderWsMonthly(){
+  const el=document.getElementById("wsMonthly"); if(!el) return;
+  const months=wsMonths(), scope=(document.getElementById("wsScope")||{}).value||"", amSub=actualByMonthSub();
+  const cats=state.categories.filter(c=>!scope || c.main===scope);
+  const planned=months.map(()=>0), actualM=months.map(()=>0);
+  for(const c of cats){
+    const plan=monthlyPlanOf(c, months.length);
+    plan.forEach((v,i)=>planned[i]+=v);
+    const am=amSub[c.main+"||"+c.sub]||{};
+    months.forEach((ym,i)=>{ actualM[i]+=(am[ym]||0); });
+  }
+  const maxV=Math.max(1,...planned,...actualM);
+  el.innerHTML=months.map((ym,i)=>{
+    const p=planned[i], a=actualM[i], over=p>0 && a>p;
+    return `<div class="chart-row">
+      <div class="chart-lbl">${monthLabel(ym)}</div>
+      <div class="chart-track">
+        <div class="chart-annual" style="width:${(p/maxV*100).toFixed(1)}%"></div>
+        <div class="chart-actual ${over?"pb-red":"pb-green"}" style="width:${(a/maxV*100).toFixed(1)}%"></div>
+      </div>
+      <div class="chart-val">${ils(a)} / ${ils(p)}</div>
+    </div>`;
+  }).join("") || '<p class="hint">אין נתונים.</p>';
+}
+function wsExportCsv(){
+  const frac=fyFraction(), actual=actualBySub(), months=wsMonths(), amSub=actualByMonthSub();
+  const head=["קטגוריה ראשית","תת-קטגוריה","תקציב שנתי","אחראי","הערה","ביצוע","יתרה","תחזית סוף שנה"]
+    .concat(months.map(m=>"מתוכנן "+monthLabel(m)))
+    .concat(months.map(m=>"בפועל "+monthLabel(m)));
+  const lines=[head.join(",")];
+  for(const main of mainOrder()){
+    for(const c of state.categories.filter(x=>x.main===main)){
+      const a=actual[c.main+"||"+c.sub]||0, annual=Number(c.annualBudget)||0;
+      const plan=monthlyPlanOf(c, months.length), am=amSub[c.main+"||"+c.sub]||{}, proj=projForecast(a,frac);
+      const row=[c.main,c.sub,annual,c.owner||"",c.note||"",a,annual-a,proj==null?"":Math.round(proj)]
+        .concat(plan.map(x=>Math.round(x)))
+        .concat(months.map(m=>Math.round(am[m]||0)));
+      lines.push(row.map(csvCell).join(","));
+    }
+  }
+  download("גיליון-ניהול-"+new Date().toISOString().slice(0,10)+".csv","﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
 }
 
 /* ====== סיכום ספקים ====== */
@@ -1682,7 +1913,7 @@ function catSetSub(id,val){ const t=state.transactions.find(x=>x.id===id); if(!t
 function renderAll(){
   document.getElementById("fyLabel").textContent=state.fiscalYear.start+" — "+state.fiscalYear.end;
   fillMainSelect(); fillSubSelect(); fillSupplierList(); fillPoDatalists();
-  renderTxTable(); renderDashboard(); renderSuppliers(); renderEmployees(); renderPlanning(); renderContacts(); renderSuppliersDir();
+  renderTxTable(); renderDashboard(); renderWorksheet(); renderSuppliers(); renderEmployees(); renderPlanning(); renderContacts(); renderSuppliersDir();
   fillCatMain(); fillCatSub(); renderCatInvoices(); renderCatalog();
 }
 /* ====== חיבור ענן (Supabase) + כניסה ====== */
@@ -1704,7 +1935,7 @@ function subscribeRealtime(){
     .on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'id=eq.main'},payload=>{
       const incoming=payload.new&&payload.new.data; if(!incoming) return;
       if(JSON.stringify(incoming)===JSON.stringify(state)) return;
-      applyingRemote=true; state=incoming; localStorage.setItem(STORE_KEY,JSON.stringify(state)); renderAll(); applyingRemote=false;
+      applyingRemote=true; state=incoming; ensureFields(state); localStorage.setItem(STORE_KEY,JSON.stringify(state)); renderAll(); applyingRemote=false;
       toast("עודכן בזמן אמת");
     }).subscribe();
 }
@@ -1713,6 +1944,7 @@ async function startApp(){
   const cloud=await cloudLoad();
   if(cloud && cloud.categories){ state=cloud; localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
   else { state=defaults(); await cloudSave(); }
+  ensureFields(state);
   // מיגרציה חד-פעמית: דחיפת מפתח AI מקומי קיים אל ה-state המסונכרן
   const _localAiKey=localStorage.getItem(GEMINI_KEY_STORE);
   if(_localAiKey && !state.geminiKey){ state.geminiKey=_localAiKey; cloudSave(); }
