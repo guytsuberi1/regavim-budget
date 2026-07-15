@@ -175,6 +175,8 @@
   .pl-params{display:flex;gap:14px;flex-wrap:wrap}
   .pl-params label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#475569;margin:0}
   .pl-params input{width:110px}
+  .pl-drag{cursor:grab;color:#94a3b8;font-size:16px;user-select:none;padding:0 4px}
+  .pl-drag:active{cursor:grabbing}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -1658,7 +1660,7 @@ function plImportPlan(input){
 let plView="general";
 const PL_CALC_LABELS={monthly:"חודשי", wh:"לפי ש\"ש", hourly:"שעתי", fixed:"סכום קבוע"};
 /* גישה לגיליון התכנון — רק למשתמשים שברשימה (לפי אימייל ההתחברות) */
-const PLAN_ALLOWED_EMAILS=["guytsuberi1@gmail.com"];
+const PLAN_ALLOWED_EMAILS=["guy@rgvb.org.il","guytsuberi1@gmail.com"];
 function plCanView(){
   return typeof _userEmail!=="undefined" && !!_userEmail && PLAN_ALLOWED_EMAILS.includes(_userEmail.toLowerCase().trim());
 }
@@ -1786,7 +1788,8 @@ function renderPlSalary(t){
     const gt=plGroupTotal(g);
     const rows=g.emps.map(e=>{
       const cost=empCost(e,pp);
-      return `<tr>
+      return `<tr ondragover="salDragOver(event)" ondragleave="salDragLeave(event)" ondrop="salDrop(event,'${g.id}','${e.id}')">
+        <td class="noprint" style="width:26px;text-align:center"><span class="pl-drag" draggable="true" ondragstart="salDragStart(event,'${g.id}','${e.id}')" ondragend="salDragEnd(event)" title="גרור לשינוי סדר">⠿</span></td>
         <td><input class="pl-name" style="width:150px" value="${esc(e.name)}" onchange="plUpdEmp('${g.id}','${e.id}','name',this.value)"></td>
         <td><input class="pl-name" style="width:130px" value="${esc(e.role||"")}" placeholder="—" onchange="plUpdEmp('${g.id}','${e.id}','role',this.value)"></td>
         <td><select onchange="plUpdEmp('${g.id}','${e.id}','calc',this.value)">${Object.entries(PL_CALC_LABELS).map(([k,l])=>`<option value="${k}" ${e.calc===k?"selected":""}>${l}</option>`).join("")}</select></td>
@@ -1805,8 +1808,8 @@ function renderPlSalary(t){
         <button class="btn danger noprint" onclick="plDelGroup('${g.id}')">מחיקת קבוצה</button>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th><th>ש"ש</th><th>נתוני שכר</th><th>עלות שנתית</th><th>הערה</th><th class="noprint"></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>'}</tbody>
+        <thead><tr><th class="noprint"></th><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th><th>ש"ש</th><th>נתוני שכר</th><th>עלות שנתית</th><th>הערה</th><th class="noprint"></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="9" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>'}</tbody>
       </table></div>
     </div>`;
   }).join("");
@@ -1895,6 +1898,23 @@ function plDelEmp(gid,eid){
   if(!confirm("למחוק את העובד?")) return;
   const g=state.plan.salGroups.find(x=>x.id===gid); if(!g) return;
   g.emps=g.emps.filter(x=>x.id!==eid); save(); renderPlanBudget();
+}
+/* גרירה לשינוי סדר עובדים בתוך קבוצה */
+let _salDrag=null;
+function salDragStart(e,gid,eid){ _salDrag={gid,eid}; const tr=e.currentTarget.closest("tr"); if(tr) tr.style.opacity=".45"; e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",eid);}catch(_){} }
+function salDragOver(e){ if(!_salDrag) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; e.currentTarget.style.background="#eef3fa"; }
+function salDragLeave(e){ e.currentTarget.style.background=""; }
+function salDragEnd(e){ _salDrag=null; document.querySelectorAll("#plSalary tr").forEach(tr=>{tr.style.opacity="";tr.style.background="";}); }
+function salDrop(e,gid,targetEid){
+  e.preventDefault(); e.currentTarget.style.background="";
+  const d=_salDrag; _salDrag=null;
+  if(!d || d.gid!==gid || d.eid===targetEid) return; // גרירה רק בתוך אותה קבוצה
+  const g=state.plan.salGroups.find(x=>x.id===gid); if(!g) return;
+  const from=g.emps.findIndex(x=>x.id===d.eid); if(from<0) return;
+  const moved=g.emps.splice(from,1)[0];
+  const to=g.emps.findIndex(x=>x.id===targetEid);
+  g.emps.splice(to<0?g.emps.length:to,0,moved); // הכנס לפני שורת המטרה
+  save(); renderPlanBudget(); toast("הסדר עודכן");
 }
 function plAddGroup(){ state.plan.salGroups.push({id:uid(), name:"קבוצה חדשה", prev:0, emps:[]}); save(); renderPlanBudget(); }
 function plDelGroup(gid){
