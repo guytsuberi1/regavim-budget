@@ -1447,6 +1447,7 @@ function ensureFields(s){
   if(!s.plan || !Array.isArray(s.plan.incomes)) s.plan=clonePlanSeed();
   plMigrateYouth(s.plan);
   plMigrateHourly(s.plan);
+  plMigrateTeaching(s.plan);
   return s;
 }
 function wsMonths(){ return fyMonths(); }
@@ -1599,6 +1600,11 @@ function PLAN_SEED_DATA(){ return {
   salParams:{monthFactor:12.5, employerFactor:1.35, costPerWeeklyHour:10000, monthlyHours:182},
   salGroups:[]
 }; }
+/* עמודת ש"ש מוצגת רק בקבוצות הוראה — סימון אוטומטי לפי שם הקבוצה (ניתן לשינוי ידני) */
+function plMigrateTeaching(p){
+  (p&&p.salGroups||[]).forEach(g=>{ if(g.teaching===undefined) g.teaching=/חינוך|מורים|הוראה/.test(g.name||""); });
+  return p;
+}
 /* עובד שעתי: מעבר משדה "שעות בחודש" (hpm) לאחוז משרה (pct) — המרה משמרת-עלות לפי שעות חודשיות למשרה מלאה */
 function plMigrateHourly(p){
   if(!p || !p.salParams) return p;
@@ -1637,6 +1643,7 @@ function plApplyImportedPlan(obj){
   obj.salGroups.forEach(g=>{ if(!Array.isArray(g.emps)) g.emps=[]; });
   plMigrateYouth(obj);
   plMigrateHourly(obj);
+  plMigrateTeaching(obj);
   state.plan=plEnsurePlanIds(obj);
   save(); renderPlanBudget();
   return null;
@@ -1777,7 +1784,9 @@ function renderPlGeneral(t){
 function plEmpInputCell(g,e){
   const on=(f)=>`onchange="plUpdEmp('${g.id}','${e.id}','${f}',this.value)"`;
   if(e.calc==="monthly") return `<input class="pl-mini" type="number" step="any" value="${Number(e.monthly)||0}" title="ברוטו חודשי" ${on("monthly")}> <small>₪/חודש</small>`;
-  if(e.calc==="wh")      return `<small>לפי עמודת ש"ש × ${ils(state.plan.salParams.costPerWeeklyHour)}</small>`;
+  if(e.calc==="wh")      return g.teaching
+    ? `<small>לפי עמודת ש"ש × ${ils(state.plan.salParams.costPerWeeklyHour)}</small>`
+    : `<input class="pl-mini" style="width:64px" type="number" step="any" value="${Number(e.wh)||0}" title="שעות שבועיות" ${on("wh")}><small>ש"ש × ${ils(state.plan.salParams.costPerWeeklyHour)}</small>`;
   if(e.calc==="hourly")  return `<input class="pl-mini" type="number" step="any" value="${Number(e.rate)||0}" title="תעריף לשעה" ${on("rate")}><small>₪/שעה</small> <input class="pl-mini" type="number" step="any" value="${+((Number(e.pct)||0).toFixed(2))}" title="אחוז משרה" ${on("pct")}><small>% משרה</small>`;
   return `<input class="pl-num" type="number" step="any" value="${Number(e.fixed)||0}" title="סכום שנתי" ${on("fixed")}> <small>₪/שנה</small>`;
 }
@@ -1786,6 +1795,7 @@ function renderPlSalary(t){
   // קבוצות
   const groupsHtml=p.salGroups.map(g=>{
     const gt=plGroupTotal(g);
+    const showWh=!!g.teaching;
     const rows=g.emps.map(e=>{
       const cost=empCost(e,pp);
       return `<tr ondragover="salDragOver(event)" ondragleave="salDragLeave(event)" ondrop="salDrop(event,'${g.id}','${e.id}')">
@@ -1793,23 +1803,25 @@ function renderPlSalary(t){
         <td><input class="pl-name" style="width:150px" value="${esc(e.name)}" onchange="plUpdEmp('${g.id}','${e.id}','name',this.value)"></td>
         <td><input class="pl-name" style="width:130px" value="${esc(e.role||"")}" placeholder="—" onchange="plUpdEmp('${g.id}','${e.id}','role',this.value)"></td>
         <td><select onchange="plUpdEmp('${g.id}','${e.id}','calc',this.value)">${Object.entries(PL_CALC_LABELS).map(([k,l])=>`<option value="${k}" ${e.calc===k?"selected":""}>${l}</option>`).join("")}</select></td>
-        <td class="num"><input class="pl-mini" style="width:64px" type="number" step="any" value="${Number(e.wh)||0}" title='שעות שבועיות — קובע את העלות רק בשיטת "לפי ש"ש"' onchange="plUpdEmp('${g.id}','${e.id}','wh',this.value)"></td>
+        ${showWh?`<td class="num"><input class="pl-mini" style="width:64px" type="number" step="any" value="${Number(e.wh)||0}" title='שעות שבועיות — קובע את העלות רק בשיטת "לפי ש"ש"' onchange="plUpdEmp('${g.id}','${e.id}','wh',this.value)"></td>`:""}
         <td>${plEmpInputCell(g,e)}</td>
         <td class="num"><b>${ils(cost)}</b></td>
         <td><input class="pl-note" style="width:150px" value="${esc(e.note||"")}" onchange="plUpdEmp('${g.id}','${e.id}','note',this.value)"></td>
         <td class="noprint"><button class="btn danger" onclick="plDelEmp('${g.id}','${e.id}')">מחק</button></td></tr>`;
     }).join("");
+    const whTotal=g.emps.reduce((s,e)=>s+(Number(e.wh)||0),0);
     return `<div class="card">
       <div class="pl-grp-head">
         <input value="${esc(g.name)}" onchange="plUpdGroup('${g.id}','name',this.value)">
-        <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b>${(()=>{const w=g.emps.reduce((s,e)=>s+(Number(e.wh)||0),0);return w>0?` · סה"כ ש"ש: <b>${+w.toFixed(2)}</b>`:"";})()}</span>
+        <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b>${(showWh&&whTotal>0)?` · סה"כ ש"ש: <b>${+whTotal.toFixed(2)}</b>`:""}</span>
         <span style="flex:1"></span>
+        <label class="seg noprint" style="padding:5px 10px;font-size:12px" title="הצג עמודת ש"ש (בדרך כלל לצוות הוראה)"><input type="checkbox" ${showWh?"checked":""} onchange="plUpdGroup('${g.id}','teaching',this.checked)"> ש"ש</label>
         <button class="btn sec mini noprint" onclick="plAddEmp('${g.id}')">+ עובד</button>
         <button class="btn danger noprint" onclick="plDelGroup('${g.id}')">מחיקת קבוצה</button>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th class="noprint"></th><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th><th>ש"ש</th><th>נתוני שכר</th><th>עלות שנתית</th><th>הערה</th><th class="noprint"></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="9" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>'}</tbody>
+        <thead><tr><th class="noprint"></th><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th>${showWh?'<th>ש"ש</th>':""}<th>נתוני שכר</th><th>עלות שנתית</th><th>הערה</th><th class="noprint"></th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="${showWh?9:8}" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>`}</tbody>
       </table></div>
     </div>`;
   }).join("");
@@ -1875,7 +1887,9 @@ function plUpdYouth(val){ state.plan.youthCount=Number(val)||0; save(); renderPl
 function plUpdParam(k,v){ state.plan.salParams[k]=Number(v)||0; save(); renderPlanBudget(); }
 function plUpdGroup(gid,field,val){
   const g=state.plan.salGroups.find(x=>x.id===gid); if(!g) return;
-  if(field==="name") g.name=val.trim(); else g[field]=Number(val)||0;
+  if(field==="name") g.name=val.trim();
+  else if(field==="teaching") g.teaching=!!val;
+  else g[field]=Number(val)||0;
   save(); renderPlanBudget();
 }
 function plUpdEmp(gid,eid,field,val){
