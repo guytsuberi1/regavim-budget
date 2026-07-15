@@ -2325,34 +2325,59 @@ function renderAll(){
 const SB_URL="https://dcnndzrdimkogfjsvcku.supabase.co";
 const SB_KEY="sb_publishable_LoALeRJVUqiyBwWhCF_0qQ_RpLwS4ew";
 const sb=window.supabase.createClient(SB_URL,SB_KEY);
-let applyingRemote=false, saveTimer=null;
+let applyingRemote=false, saveTimer=null, _legacyPlanBlob=null;
 function scheduleCloudSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(cloudSave,400); }
 async function cloudSave(){
-  try{ const { error }=await sb.from('app_state').upsert({ id:'main', data: state, updated_at: new Date().toISOString() });
+  // נתוני התכנון (שכר וכו') נשמרים בטבלה מוגנת plan_private — רק משתמש מורשה כותב אליה
+  let planStored=false;
+  if(typeof plCanView==="function" && plCanView() && state.plan){
+    try{ const { error }=await sb.from('plan_private').upsert({ id:'main', data: state.plan, updated_at: new Date().toISOString() });
+      planStored=!error; if(error) console.error('planSave',error); }catch(e){ console.error('planSave',e); }
+  }
+  // app_state המשותף — בלי נתוני התכנון. עותק ישן (טרם מיגרציה) נשמר כדי למנוע אובדן נתונים
+  const pub={...state};
+  if(planStored){ delete pub.plan; _legacyPlanBlob=null; }
+  else if(_legacyPlanBlob){ pub.plan=_legacyPlanBlob; }
+  else { delete pub.plan; }
+  try{ const { error }=await sb.from('app_state').upsert({ id:'main', data: pub, updated_at: new Date().toISOString() });
     if(error) console.error('cloudSave',error); }catch(e){ console.error(e); }
 }
 async function cloudLoad(){
   try{ const { data, error }=await sb.from('app_state').select('data').eq('id','main').maybeSingle();
     if(error){ console.error('cloudLoad',error); return null; } return data?data.data:null; }catch(e){ console.error(e); return null; }
 }
+async function cloudLoadPlan(){
+  try{ const { data, error }=await sb.from('plan_private').select('data').eq('id','main').maybeSingle();
+    if(error){ return null; } return data?data.data:null; }catch(e){ return null; }
+}
 function subscribeRealtime(){
   sb.channel('app_state_rt')
     .on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'id=eq.main'},payload=>{
       const incoming=payload.new&&payload.new.data; if(!incoming) return;
-      if(JSON.stringify(incoming)===JSON.stringify(state)) return;
-      applyingRemote=true; state=incoming; ensureFields(state); localStorage.setItem(STORE_KEY,JSON.stringify(state)); renderAll(); applyingRemote=false;
+      if(incoming.plan){ _legacyPlanBlob=incoming.plan; delete incoming.plan; } // התכנון לא אמור לזרום דרך app_state
+      const cur={...state}; delete cur.plan;
+      if(JSON.stringify(incoming)===JSON.stringify(cur)) return;
+      const keepPlan=state.plan; // שומרים על התכנון המקומי — הוא מגיע רק מ-plan_private
+      applyingRemote=true; state=incoming; state.plan=keepPlan; ensureFields(state); localStorage.setItem(STORE_KEY,JSON.stringify(state)); renderAll(); applyingRemote=false;
       toast("עודכן בזמן אמת");
     }).subscribe();
 }
 async function startApp(){
   document.getElementById("loginOverlay").style.display="none";
+  try{ const { data:{ user } }=await sb.auth.getUser(); _userEmail=(user&&user.email)||""; }catch(e){ _userEmail=""; }
   const cloud=await cloudLoad();
-  if(cloud && cloud.categories){ state=cloud; localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
-  else { state=defaults(); await cloudSave(); }
+  _legacyPlanBlob=(cloud && cloud.plan) ? cloud.plan : null; // עותק תכנון ישן בשורה המשותפת (טרם מיגרציה)
+  if(cloud && cloud.categories){ state=cloud; } else { state=defaults(); }
+  delete state.plan; // לעולם לא לסמוך על התכנון מ-app_state
+  const cloudPlan=await cloudLoadPlan(); // מגיע רק למשתמש מורשה (RLS)
+  if(cloudPlan) state.plan=cloudPlan;
+  else if(_legacyPlanBlob && typeof plCanView==="function" && plCanView()) state.plan=_legacyPlanBlob; // מקור למיגרציה חד-פעמית
   ensureFields(state);
-  // מיגרציה חד-פעמית: דחיפת מפתח AI מקומי קיים אל ה-state המסונכרן
+  localStorage.setItem(STORE_KEY,JSON.stringify(state));
+  // מיגרציה חד-פעמית: מפתח AI מקומי קיים
   const _localAiKey=localStorage.getItem(GEMINI_KEY_STORE);
-  if(_localAiKey && !state.geminiKey){ state.geminiKey=_localAiKey; cloudSave(); }
+  if(_localAiKey && !state.geminiKey){ state.geminiKey=_localAiKey; }
+  await cloudSave(); // מנקה את app_state מהתכנון + כותב ל-plan_private אם מורשה
   subscribeRealtime();
   const od=document.getElementById("odStatus"); if(od && od.closest(".card")) od.closest(".card").style.display="none";
   updateUserBar(); resetForm(); renderAll();
