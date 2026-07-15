@@ -1443,6 +1443,7 @@ function ensureFields(s){
   if(!s || typeof s!=="object") return s;
   if(!Array.isArray(s.commitments)) s.commitments=[];
   if(!s.plan || !Array.isArray(s.plan.incomes)) s.plan=clonePlanSeed();
+  plMigrateYouth(s.plan);
   return s;
 }
 function wsMonths(){ return fyMonths(); }
@@ -1591,9 +1592,20 @@ function PLAN_SEED_DATA(){ return {
   incomes:[],
   expenses:[{name:"שכר עובדים(כולל הנהלה)", amount:0, prev:0, note:"", salary:true}],
   classes:[],
+  youthCount:0,
   salParams:{monthFactor:12.5, employerFactor:1.35, costPerWeeklyHour:10000},
   salGroups:[]
 }; }
+/* עליית הנוער אינה כיתה — אם היא מופיעה ברשימת הכיתות (נתונים ישנים/ייבוא), מעבירים אותה לשדה נפרד */
+function plMigrateYouth(p){
+  if(!p) return p;
+  if(typeof p.youthCount!=="number") p.youthCount=0;
+  if(Array.isArray(p.classes)){
+    const i=p.classes.findIndex(c=>(c.name||"").includes("עליית הנוער"));
+    if(i>=0){ p.youthCount=Number(p.classes[i].count)||0; p.classes.splice(i,1); }
+  }
+  return p;
+}
 function plEnsurePlanIds(p){
   p.incomes.forEach(r=>{ if(!r.id) r.id=uid(); });
   p.expenses.forEach(r=>{ if(!r.id) r.id=uid(); });
@@ -1608,6 +1620,7 @@ function plApplyImportedPlan(obj){
   if(!Array.isArray(obj.classes)) obj.classes=[];
   if(!obj.expenses.some(e=>e.salary)) obj.expenses.unshift({name:"שכר עובדים(כולל הנהלה)", amount:0, prev:0, note:"", salary:true});
   obj.salGroups.forEach(g=>{ if(!Array.isArray(g.emps)) g.emps=[]; });
+  plMigrateYouth(obj);
   state.plan=plEnsurePlanIds(obj);
   save(); renderPlanBudget();
   return null;
@@ -1644,13 +1657,6 @@ function planTotals(){
   const exp=p.expenses.reduce((s,r)=>s+(r.salary?sal:(Number(r.amount)||0)),0);
   return {inc, exp, sal, bal:inc-exp};
 }
-function plDiff(cur,prev,goodUp){
-  prev=Number(prev)||0; if(!prev) return "";
-  const d=cur-prev;
-  if(Math.abs(d)<1) return '<div class="pl-diff" style="color:#94a3b8">ללא שינוי</div>';
-  const good=goodUp ? d>0 : d<0;
-  return `<div class="pl-diff" style="color:${good?"var(--green)":"var(--red)"}">${d>0?"▲":"▼"} ${ils(Math.abs(d))}</div>`;
-}
 function plSwitchView(v){ plView=v; renderPlanBudget(); }
 
 function renderPlanBudget(){
@@ -1675,20 +1681,18 @@ function renderPlanBudget(){
   if(plView==="general") renderPlGeneral(t); else renderPlSalary(t);
 }
 
-function plRowsHtml(list, goodUp){
+function plRowsHtml(list){
   const t=planTotals();
   return state.plan[list].map(r=>{
     if(r.salary){
       return `<tr class="pl-locked"><td>🔗 ${esc(r.name)}</td>
         <td class="num"><b>${ils(t.sal)}</b></td>
-        <td class="num"><input class="pl-num" type="number" step="any" value="${r.prev||""}" placeholder="—" onchange="plUpdRow('${list}','${r.id}','prev',this.value)">${plDiff(t.sal,r.prev,goodUp)}</td>
         <td><span class="hint" style="margin:0">מחושב אוטומטית מגיליון השכר</span> <button class="btn mini sec noprint" onclick="plSwitchView('salary')">לגיליון השכר ←</button></td>
         <td class="noprint"></td></tr>`;
     }
     const amt=Number(r.amount)||0;
     return `<tr><td><input class="pl-name" value="${esc(r.name)}" onchange="plUpdRow('${list}','${r.id}','name',this.value)"></td>
       <td class="num"><input class="pl-num" type="number" step="any" value="${amt}" onchange="plUpdRow('${list}','${r.id}','amount',this.value)"></td>
-      <td class="num"><input class="pl-num" type="number" step="any" value="${r.prev||""}" placeholder="—" onchange="plUpdRow('${list}','${r.id}','prev',this.value)">${plDiff(amt,r.prev,goodUp)}</td>
       <td><input class="pl-note" value="${esc(r.note||"")}" onchange="plUpdRow('${list}','${r.id}','note',this.value)"></td>
       <td class="noprint"><button class="btn danger" onclick="plDelRow('${list}','${r.id}')">מחק</button></td></tr>`;
   }).join("");
@@ -1702,31 +1706,35 @@ function renderPlGeneral(t){
       <button class="btn sec mini noprint" onclick="plExportGeneralCsv()" title="ייצוא ל-CSV (Excel)" style="font-size:18px;padding:6px 10px">⬇️</button>
     </div>
     <div class="scroll"><table>
-      <thead><tr><th>סעיף</th><th>סכום</th><th>שנה קודמת</th><th>הערה</th><th class="noprint"></th></tr></thead>
-      <tbody>${plRowsHtml("incomes",true)}
-      <tr class="grand"><td>סה"כ הכנסות</td><td class="num">${ils(t.inc)}</td><td></td><td></td><td class="noprint"></td></tr></tbody>
+      <thead><tr><th>סעיף</th><th>סכום</th><th>הערה</th><th class="noprint"></th></tr></thead>
+      <tbody>${plRowsHtml("incomes")}
+      <tr class="grand"><td>סה"כ הכנסות</td><td class="num">${ils(t.inc)}</td><td></td><td class="noprint"></td></tr></tbody>
     </table></div>
     <div class="btnbar noprint"><button class="btn sec" onclick="plAddRow('incomes')">+ שורת הכנסה</button></div>
   </div>
   <div class="card">
     <h2>🧾 הוצאות</h2>
     <div class="scroll"><table>
-      <thead><tr><th>סעיף</th><th>סכום</th><th>שנה קודמת</th><th>הערה</th><th class="noprint"></th></tr></thead>
-      <tbody>${plRowsHtml("expenses",false)}
-      <tr class="grand"><td>סה"כ הוצאות</td><td class="num">${ils(t.exp)}</td><td></td><td></td><td class="noprint"></td></tr>
-      <tr class="grand"><td>מאזן</td><td class="num" style="color:${t.bal<0?"var(--red)":"var(--green)"}">${ils(t.bal)}</td><td></td><td></td><td class="noprint"></td></tr></tbody>
+      <thead><tr><th>סעיף</th><th>סכום</th><th>הערה</th><th class="noprint"></th></tr></thead>
+      <tbody>${plRowsHtml("expenses")}
+      <tr class="grand"><td>סה"כ הוצאות</td><td class="num">${ils(t.exp)}</td><td></td><td class="noprint"></td></tr>
+      <tr class="grand"><td>מאזן</td><td class="num" style="color:${t.bal<0?"var(--red)":"var(--green)"}">${ils(t.bal)}</td><td></td><td class="noprint"></td></tr></tbody>
     </table></div>
     <div class="btnbar noprint"><button class="btn sec" onclick="plAddRow('expenses')">+ שורת הוצאה</button></div>
   </div>
   <div class="card">
-    <h2>🎓 נתוני כיתות</h2>
+    <h2>🎓 נתוני תלמידים</h2>
     <div class="scroll"><table style="max-width:420px">
       <thead><tr><th>כיתה</th><th>תלמידים</th></tr></thead>
       <tbody>${state.plan.classes.map((c,i)=>`<tr>
         <td><input class="pl-mini" style="width:140px;text-align:right;direction:rtl" value="${esc(c.name)}" onchange="plUpdClass(${i},'name',this.value)"></td>
         <td class="num"><input class="pl-mini" type="number" value="${c.count||0}" onchange="plUpdClass(${i},'count',this.value)"></td></tr>`).join("")}
-      <tr class="grand"><td>סה"כ תלמידים</td><td class="num">${state.plan.classes.reduce((s,c)=>s+(Number(c.count)||0),0)}</td></tr></tbody>
+      <tr class="grand"><td>סה"כ תלמידים בכיתות</td><td class="num">${state.plan.classes.reduce((s,c)=>s+(Number(c.count)||0),0)}</td></tr></tbody>
     </table></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <label style="margin:0;font-size:13px;color:var(--muted)">עליית הנוער (נמנית בנפרד — לא כיתה):</label>
+      <input class="pl-mini" type="number" value="${Number(state.plan.youthCount)||0}" onchange="plUpdYouth(this.value)">
+    </div>
   </div>`;
 }
 
@@ -1739,7 +1747,6 @@ function plEmpInputCell(g,e){
 }
 function renderPlSalary(t){
   const host=document.getElementById("plSalary"), p=state.plan, pp=p.salParams;
-  const prevTotal=p.salGroups.reduce((s,g)=>s+(Number(g.prev)||0),0);
   // קבוצות
   const groupsHtml=p.salGroups.map(g=>{
     const gt=plGroupTotal(g);
@@ -1751,22 +1758,20 @@ function renderPlSalary(t){
         <td><select onchange="plUpdEmp('${g.id}','${e.id}','calc',this.value)">${Object.entries(PL_CALC_LABELS).map(([k,l])=>`<option value="${k}" ${e.calc===k?"selected":""}>${l}</option>`).join("")}</select></td>
         <td>${plEmpInputCell(g,e)}</td>
         <td class="num"><b>${ils(cost)}</b></td>
-        <td class="num"><input class="pl-num" style="width:96px" type="number" step="any" value="${e.prev||""}" placeholder="—" onchange="plUpdEmp('${g.id}','${e.id}','prev',this.value)">${plDiff(cost,e.prev,false)}</td>
-        <td><input class="pl-mini" style="width:120px;text-align:right;direction:rtl" list="plSourceList" value="${esc(e.source||"כללי")}" onchange="plUpdEmp('${g.id}','${e.id}','source',this.value)"></td>
         <td><input class="pl-note" style="width:150px" value="${esc(e.note||"")}" onchange="plUpdEmp('${g.id}','${e.id}','note',this.value)"></td>
         <td class="noprint"><button class="btn danger" onclick="plDelEmp('${g.id}','${e.id}')">מחק</button></td></tr>`;
     }).join("");
     return `<div class="card">
       <div class="pl-grp-head">
         <input value="${esc(g.name)}" onchange="plUpdGroup('${g.id}','name',this.value)">
-        <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b>${(Number(g.prev)||0)?` · שנה קודמת: ${ils(g.prev)} ${plDiff(gt,g.prev,false)}`:""}</span>
+        <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b></span>
         <span style="flex:1"></span>
         <button class="btn sec mini noprint" onclick="plAddEmp('${g.id}')">+ עובד</button>
         <button class="btn danger noprint" onclick="plDelGroup('${g.id}')">מחיקת קבוצה</button>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th><th>נתוני שכר</th><th>עלות שנתית</th><th>שנה קודמת</th><th>מקור תקציבי</th><th>הערה</th><th class="noprint"></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="9" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>'}</tbody>
+        <thead><tr><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th><th>נתוני שכר</th><th>עלות שנתית</th><th>הערה</th><th class="noprint"></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="7" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>'}</tbody>
       </table></div>
     </div>`;
   }).join("");
@@ -1780,13 +1785,6 @@ function renderPlSalary(t){
     byPerson[nm].roles.push(e.role||g.name);
   }
   const multi=Object.entries(byPerson).filter(([,v])=>v.roles.length>1).sort((a,b)=>b[1].total-a[1].total);
-  // כיסוי מקורות
-  const cov={};
-  for(const g of p.salGroups) for(const e of g.emps){
-    const src=(e.source||"כללי").trim()||"כללי";
-    cov[src]=(cov[src]||0)+empCost(e,pp);
-  }
-  const covRows=Object.entries(cov).sort((a,b)=>b[1]-a[1]);
   host.innerHTML=`
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -1801,12 +1799,9 @@ function renderPlSalary(t){
     </div>
     <div class="stat" style="margin-top:14px">
       <div class="box"><div class="lbl">סה"כ עלות שכר מתוכננת</div><div class="val">${ils(t.sal)}</div></div>
-      <div class="box"><div class="lbl">שנה קודמת</div><div class="val">${ils(prevTotal)}</div></div>
-      <div class="box"><div class="lbl">שינוי</div><div class="val ${t.sal-prevTotal>0?"neg":""}">${ils(t.sal-prevTotal)}</div></div>
       <div class="box"><div class="lbl">חלק מסה"כ ההוצאות</div><div class="val">${t.exp>0?pct(t.sal/t.exp):"—"}</div></div>
     </div>
   </div>
-  <datalist id="plSourceList"><option>כללי</option>${[...new Set(Object.keys(cov))].filter(s=>s!=="כללי").map(s=>`<option>${esc(s)}</option>`).join("")}</datalist>
   ${groupsHtml}
   <div class="btnbar noprint" style="margin:0 0 16px"><button class="btn sec" onclick="plAddGroup()">+ קבוצה חדשה</button></div>
   <div class="card">
@@ -1815,14 +1810,6 @@ function renderPlSalary(t){
     <div class="scroll"><table style="max-width:640px">
       <thead><tr><th>שם</th><th>תפקידים</th><th>סה"כ עלות</th></tr></thead>
       <tbody>${multi.map(([nm,v])=>`<tr><td>${esc(nm)}</td><td>${esc(v.roles.join(" · "))}</td><td class="num"><b>${ils(v.total)}</b></td></tr>`).join("")||'<tr><td colspan="3" style="text-align:center;color:var(--muted)">אין כרגע עובדים עם יותר מתפקיד אחד</td></tr>'}</tbody>
-    </table></div>
-  </div>
-  <div class="card">
-    <h2>🎯 כיסוי מקורות תקציביים</h2>
-    <p class="hint">כמה מעלות השכר יושב על התקציב הכללי וכמה על קולות קוראים ייעודיים.</p>
-    <div class="scroll"><table style="max-width:640px">
-      <thead><tr><th>מקור</th><th>עלות שכר</th><th>% מהשכר</th></tr></thead>
-      <tbody>${covRows.map(([src,sum])=>`<tr><td>${esc(src)}</td><td class="num">${ils(sum)}</td><td class="num">${t.sal>0?pct(sum/t.sal):"—"}</td></tr>`).join("")}</tbody>
     </table></div>
   </div>`;
 }
@@ -1845,6 +1832,7 @@ function plUpdClass(i,field,val){
   if(field==="name") c.name=val.trim(); else c.count=Number(val)||0;
   save(); renderPlanBudget();
 }
+function plUpdYouth(val){ state.plan.youthCount=Number(val)||0; save(); renderPlanBudget(); }
 function plUpdParam(k,v){ state.plan.salParams[k]=Number(v)||0; save(); renderPlanBudget(); }
 function plUpdGroup(gid,field,val){
   const g=state.plan.salGroups.find(x=>x.id===gid); if(!g) return;
@@ -1882,23 +1870,23 @@ function plDelGroup(gid){
 /* ייצוא תכנון */
 function plExportGeneralCsv(){
   const t=planTotals();
-  const lines=[["סוג","סעיף","סכום","שנה קודמת","הערה"].join(",")];
-  for(const r of state.plan.incomes) lines.push(["הכנסה",r.name,Math.round(Number(r.amount)||0),r.prev||"",r.note||""].map(csvCell).join(","));
-  lines.push(["הכנסה","סה\"כ הכנסות",Math.round(t.inc),"",""].map(csvCell).join(","));
-  for(const r of state.plan.expenses) lines.push(["הוצאה",r.name,Math.round(r.salary?t.sal:(Number(r.amount)||0)),r.prev||"",r.salary?"מחושב מגיליון השכר":(r.note||"")].map(csvCell).join(","));
-  lines.push(["הוצאה","סה\"כ הוצאות",Math.round(t.exp),"",""].map(csvCell).join(","));
-  lines.push(["","מאזן",Math.round(t.bal),"",""].map(csvCell).join(","));
+  const lines=[["סוג","סעיף","סכום","הערה"].join(",")];
+  for(const r of state.plan.incomes) lines.push(["הכנסה",r.name,Math.round(Number(r.amount)||0),r.note||""].map(csvCell).join(","));
+  lines.push(["הכנסה","סה\"כ הכנסות",Math.round(t.inc),""].map(csvCell).join(","));
+  for(const r of state.plan.expenses) lines.push(["הוצאה",r.name,Math.round(r.salary?t.sal:(Number(r.amount)||0)),r.salary?"מחושב מגיליון השכר":(r.note||"")].map(csvCell).join(","));
+  lines.push(["הוצאה","סה\"כ הוצאות",Math.round(t.exp),""].map(csvCell).join(","));
+  lines.push(["","מאזן",Math.round(t.bal),""].map(csvCell).join(","));
   download("תכנון-כללי-"+new Date().toISOString().slice(0,10)+".csv","﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
 }
 function plExportSalaryCsv(){
   const pp=state.plan.salParams;
-  const lines=[["קבוצה","שם","תפקיד","שיטת חישוב","ברוטו חודשי","ש\"ש","₪ לשעה","שעות בחודש","עלות שנתית","שנה קודמת","מקור תקציבי","הערה"].join(",")];
+  const lines=[["קבוצה","שם","תפקיד","שיטת חישוב","ברוטו חודשי","ש\"ש","₪ לשעה","שעות בחודש","עלות שנתית","הערה"].join(",")];
   for(const g of state.plan.salGroups){
     for(const e of g.emps)
-      lines.push([g.name,e.name,e.role||"",PL_CALC_LABELS[e.calc]||e.calc,e.monthly||"",e.wh||"",e.rate||"",e.hpm||"",Math.round(empCost(e,pp)),e.prev||"",e.source||"",e.note||""].map(csvCell).join(","));
-    lines.push([g.name,"סה\"כ קבוצה","","","","","","",Math.round(plGroupTotal(g)),g.prev||"","",""].map(csvCell).join(","));
+      lines.push([g.name,e.name,e.role||"",PL_CALC_LABELS[e.calc]||e.calc,e.monthly||"",e.wh||"",e.rate||"",e.hpm||"",Math.round(empCost(e,pp)),e.note||""].map(csvCell).join(","));
+    lines.push([g.name,"סה\"כ קבוצה","","","","","","",Math.round(plGroupTotal(g)),""].map(csvCell).join(","));
   }
-  lines.push(["סה\"כ","כל השכר","","","","","","",Math.round(salaryTotal()),"","",""].map(csvCell).join(","));
+  lines.push(["סה\"כ","כל השכר","","","","","","",Math.round(salaryTotal()),""].map(csvCell).join(","));
   download("תכנון-שכר-"+new Date().toISOString().slice(0,10)+".csv","﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
 }
 
