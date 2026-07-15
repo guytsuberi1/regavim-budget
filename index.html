@@ -209,7 +209,7 @@
   <button data-tab="entry" class="active">➕ הזנת חשבונית</button>
   <button data-tab="dashboard">📊 תקציב מול ביצוע</button>
   <button data-tab="worksheet">📋 גיליון ניהול</button>
-  <button data-tab="planbudget">🧮 תכנון תקציב</button>
+  <button data-tab="planbudget" style="display:none">🧮 תכנון תקציב</button>
   <button data-tab="suppliers">🏷️ סיכום ספקים</button>
   <button data-tab="employees">👤 סיכום עובדים</button>
   <button data-tab="catinv">🔎 חשבוניות לפי קטגוריה</button>
@@ -1444,6 +1444,7 @@ function ensureFields(s){
   if(!Array.isArray(s.commitments)) s.commitments=[];
   if(!s.plan || !Array.isArray(s.plan.incomes)) s.plan=clonePlanSeed();
   plMigrateYouth(s.plan);
+  plMigrateHourly(s.plan);
   return s;
 }
 function wsMonths(){ return fyMonths(); }
@@ -1593,9 +1594,21 @@ function PLAN_SEED_DATA(){ return {
   expenses:[{name:"שכר עובדים(כולל הנהלה)", amount:0, prev:0, note:"", salary:true}],
   classes:[],
   youthCount:0,
-  salParams:{monthFactor:12.5, employerFactor:1.35, costPerWeeklyHour:10000},
+  salParams:{monthFactor:12.5, employerFactor:1.35, costPerWeeklyHour:10000, monthlyHours:182},
   salGroups:[]
 }; }
+/* עובד שעתי: מעבר משדה "שעות בחודש" (hpm) לאחוז משרה (pct) — המרה משמרת-עלות לפי שעות חודשיות למשרה מלאה */
+function plMigrateHourly(p){
+  if(!p || !p.salParams) return p;
+  if(!(Number(p.salParams.monthlyHours)>0)) p.salParams.monthlyHours=182;
+  (p.salGroups||[]).forEach(g=>(g.emps||[]).forEach(e=>{
+    if(e.calc==="hourly" && e.pct==null && Number(e.hpm)>0){
+      e.pct=Number(e.hpm)/p.salParams.monthlyHours*100;
+      delete e.hpm;
+    }
+  }));
+  return p;
+}
 /* עליית הנוער אינה כיתה — אם היא מופיעה ברשימת הכיתות (נתונים ישנים/ייבוא), מעבירים אותה לשדה נפרד */
 function plMigrateYouth(p){
   if(!p) return p;
@@ -1621,6 +1634,7 @@ function plApplyImportedPlan(obj){
   if(!obj.expenses.some(e=>e.salary)) obj.expenses.unshift({name:"שכר עובדים(כולל הנהלה)", amount:0, prev:0, note:"", salary:true});
   obj.salGroups.forEach(g=>{ if(!Array.isArray(g.emps)) g.emps=[]; });
   plMigrateYouth(obj);
+  plMigrateHourly(obj);
   state.plan=plEnsurePlanIds(obj);
   save(); renderPlanBudget();
   return null;
@@ -1643,10 +1657,29 @@ function plImportPlan(input){
 /* ====== תכנון תקציב: מנוע חישוב ותצוגה ====== */
 let plView="general";
 const PL_CALC_LABELS={monthly:"חודשי", wh:"לפי ש\"ש", hourly:"שעתי", fixed:"סכום קבוע"};
+/* גישה לגיליון התכנון — רק למשתמשים שברשימה (לפי אימייל ההתחברות) */
+const PLAN_ALLOWED_EMAILS=["guytsuberi1@gmail.com"];
+function plCanView(){
+  return typeof _userEmail!=="undefined" && !!_userEmail && PLAN_ALLOWED_EMAILS.includes(_userEmail.toLowerCase().trim());
+}
+function plApplyAccess(){
+  const btn=document.querySelector('nav button[data-tab="planbudget"]');
+  const okv=plCanView();
+  if(btn) btn.style.display=okv?"":"none";
+  if(!okv){
+    const sec=document.getElementById("planbudget");
+    if(sec && sec.classList.contains("active")){
+      sec.classList.remove("active"); if(btn) btn.classList.remove("active");
+      document.getElementById("entry").classList.add("active");
+      const eb=document.querySelector('nav button[data-tab="entry"]'); if(eb) eb.classList.add("active");
+    }
+  }
+  renderPlanBudget();
+}
 function empCost(e,p){
   if(e.calc==="monthly") return (Number(e.monthly)||0)*p.monthFactor*p.employerFactor;
   if(e.calc==="wh")      return (Number(e.wh)||0)*p.costPerWeeklyHour;
-  if(e.calc==="hourly")  return (Number(e.rate)||0)*(Number(e.hpm)||0)*p.monthFactor*p.employerFactor;
+  if(e.calc==="hourly")  return (Number(e.rate)||0)*((Number(e.pct)||0)/100)*(Number(p.monthlyHours)||182)*p.monthFactor*p.employerFactor;
   return Number(e.fixed)||0;
 }
 function plGroupTotal(g){ const p=state.plan.salParams; return g.emps.reduce((s,e)=>s+empCost(e,p),0); }
@@ -1661,6 +1694,7 @@ function plSwitchView(v){ plView=v; renderPlanBudget(); }
 
 function renderPlanBudget(){
   const bar=document.getElementById("plBar"); if(!bar || !state.plan) return;
+  if(!plCanView()){ ["plBar","plGeneral","plSalary"].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=""; }); return; }
   const t=planTotals();
   bar.innerHTML=`<div class="pl-balbar">
       <span><span class="b">שנת תכנון:</span> ${esc(state.plan.year)}</span>
@@ -1741,8 +1775,8 @@ function renderPlGeneral(t){
 function plEmpInputCell(g,e){
   const on=(f)=>`onchange="plUpdEmp('${g.id}','${e.id}','${f}',this.value)"`;
   if(e.calc==="monthly") return `<input class="pl-mini" type="number" step="any" value="${Number(e.monthly)||0}" title="ברוטו חודשי" ${on("monthly")}> <small>₪/חודש</small>`;
-  if(e.calc==="wh")      return `<input class="pl-mini" type="number" step="any" value="${Number(e.wh)||0}" title="שעות שבועיות" ${on("wh")}> <small>ש"ש</small>`;
-  if(e.calc==="hourly")  return `<input class="pl-mini" type="number" step="any" value="${Number(e.rate)||0}" title="תעריף לשעה" ${on("rate")}><small>₪/שעה</small> <input class="pl-mini" type="number" step="any" value="${Number(e.hpm)||0}" title="שעות בחודש" ${on("hpm")}><small>ש'/חודש</small>`;
+  if(e.calc==="wh")      return `<small>לפי עמודת ש"ש × ${ils(state.plan.salParams.costPerWeeklyHour)}</small>`;
+  if(e.calc==="hourly")  return `<input class="pl-mini" type="number" step="any" value="${Number(e.rate)||0}" title="תעריף לשעה" ${on("rate")}><small>₪/שעה</small> <input class="pl-mini" type="number" step="any" value="${+((Number(e.pct)||0).toFixed(2))}" title="אחוז משרה" ${on("pct")}><small>% משרה</small>`;
   return `<input class="pl-num" type="number" step="any" value="${Number(e.fixed)||0}" title="סכום שנתי" ${on("fixed")}> <small>₪/שנה</small>`;
 }
 function renderPlSalary(t){
@@ -1756,6 +1790,7 @@ function renderPlSalary(t){
         <td><input class="pl-name" style="width:150px" value="${esc(e.name)}" onchange="plUpdEmp('${g.id}','${e.id}','name',this.value)"></td>
         <td><input class="pl-name" style="width:130px" value="${esc(e.role||"")}" placeholder="—" onchange="plUpdEmp('${g.id}','${e.id}','role',this.value)"></td>
         <td><select onchange="plUpdEmp('${g.id}','${e.id}','calc',this.value)">${Object.entries(PL_CALC_LABELS).map(([k,l])=>`<option value="${k}" ${e.calc===k?"selected":""}>${l}</option>`).join("")}</select></td>
+        <td class="num"><input class="pl-mini" style="width:64px" type="number" step="any" value="${Number(e.wh)||0}" title='שעות שבועיות — קובע את העלות רק בשיטת "לפי ש"ש"' onchange="plUpdEmp('${g.id}','${e.id}','wh',this.value)"></td>
         <td>${plEmpInputCell(g,e)}</td>
         <td class="num"><b>${ils(cost)}</b></td>
         <td><input class="pl-note" style="width:150px" value="${esc(e.note||"")}" onchange="plUpdEmp('${g.id}','${e.id}','note',this.value)"></td>
@@ -1764,14 +1799,14 @@ function renderPlSalary(t){
     return `<div class="card">
       <div class="pl-grp-head">
         <input value="${esc(g.name)}" onchange="plUpdGroup('${g.id}','name',this.value)">
-        <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b></span>
+        <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b>${(()=>{const w=g.emps.reduce((s,e)=>s+(Number(e.wh)||0),0);return w>0?` · סה"כ ש"ש: <b>${+w.toFixed(2)}</b>`:"";})()}</span>
         <span style="flex:1"></span>
         <button class="btn sec mini noprint" onclick="plAddEmp('${g.id}')">+ עובד</button>
         <button class="btn danger noprint" onclick="plDelGroup('${g.id}')">מחיקת קבוצה</button>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th><th>נתוני שכר</th><th>עלות שנתית</th><th>הערה</th><th class="noprint"></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="7" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>'}</tbody>
+        <thead><tr><th>שם</th><th>תפקיד</th><th>שיטת חישוב</th><th>ש"ש</th><th>נתוני שכר</th><th>עלות שנתית</th><th>הערה</th><th class="noprint"></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:var(--muted)">אין עובדים — לחץ "+ עובד"</td></tr>'}</tbody>
       </table></div>
     </div>`;
   }).join("");
@@ -1791,11 +1826,12 @@ function renderPlSalary(t){
       <h2 style="margin:0">⚙️ פרמטרי חישוב (מה-אם)</h2>
       <button class="btn sec mini noprint" onclick="plExportSalaryCsv()" title="ייצוא ל-CSV (Excel)" style="font-size:18px;padding:6px 10px">⬇️</button>
     </div>
-    <p class="hint">שינוי פרמטר מעדכן מיד את כל עלויות השכר ואת המאזן. עלות שנתית לעובד חודשי = ברוטו × מכפיל חודשים × עלות מעביד · מורה = ש"ש × עלות ש"ש · שעתי = תעריף × שעות בחודש × מכפיל חודשים × עלות מעביד.</p>
+    <p class="hint">שינוי פרמטר מעדכן מיד את כל עלויות השכר ואת המאזן. עלות שנתית לעובד חודשי = ברוטו × מכפיל חודשים × עלות מעביד · מורה = ש"ש × עלות ש"ש · שעתי = תעריף × אחוז משרה × שעות חודשיות למשרה מלאה × מכפיל חודשים × עלות מעביד.</p>
     <div class="pl-params">
       <label>מכפיל חודשים<input type="number" step="any" value="${pp.monthFactor}" onchange="plUpdParam('monthFactor',this.value)"></label>
       <label>עלות מעביד<input type="number" step="any" value="${pp.employerFactor}" onchange="plUpdParam('employerFactor',this.value)"></label>
       <label>עלות ש"ש לשנה (₪)<input type="number" step="any" value="${pp.costPerWeeklyHour}" onchange="plUpdParam('costPerWeeklyHour',this.value)"></label>
+      <label>שעות חודשיות למשרה מלאה<input type="number" step="any" value="${pp.monthlyHours||182}" onchange="plUpdParam('monthlyHours',this.value)"></label>
     </div>
     <div class="stat" style="margin-top:14px">
       <div class="box"><div class="lbl">סה"כ עלות שכר מתוכננת</div><div class="val">${ils(t.sal)}</div></div>
@@ -1880,10 +1916,10 @@ function plExportGeneralCsv(){
 }
 function plExportSalaryCsv(){
   const pp=state.plan.salParams;
-  const lines=[["קבוצה","שם","תפקיד","שיטת חישוב","ברוטו חודשי","ש\"ש","₪ לשעה","שעות בחודש","עלות שנתית","הערה"].join(",")];
+  const lines=[["קבוצה","שם","תפקיד","שיטת חישוב","ברוטו חודשי","ש\"ש","₪ לשעה","אחוז משרה","עלות שנתית","הערה"].join(",")];
   for(const g of state.plan.salGroups){
     for(const e of g.emps)
-      lines.push([g.name,e.name,e.role||"",PL_CALC_LABELS[e.calc]||e.calc,e.monthly||"",e.wh||"",e.rate||"",e.hpm||"",Math.round(empCost(e,pp)),e.note||""].map(csvCell).join(","));
+      lines.push([g.name,e.name,e.role||"",PL_CALC_LABELS[e.calc]||e.calc,e.monthly||"",e.wh||"",e.rate||"",e.pct!=null?+Number(e.pct).toFixed(2):"",Math.round(empCost(e,pp)),e.note||""].map(csvCell).join(","));
     lines.push([g.name,"סה\"כ קבוצה","","","","","","",Math.round(plGroupTotal(g)),""].map(csvCell).join(","));
   }
   lines.push(["סה\"כ","כל השכר","","","","","","",Math.round(salaryTotal()),""].map(csvCell).join(","));
@@ -2293,6 +2329,7 @@ async function updateUserBar(){
     const es=document.getElementById("headerSync");
     if(es && user){
       _userEmail=user.email||"";
+      plApplyAccess();
       const ini=userInitials(user);
       es.innerHTML='<div class="usermenu">'
         +'<button class="avatar" id="avatarBtn" aria-label="תפריט משתמש" title="'+esc(_userEmail)+'">'+esc(ini)+'</button>'
