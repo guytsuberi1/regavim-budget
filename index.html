@@ -318,6 +318,17 @@
       <div id="dashChart" class="dash-chart"></div>
     </div>
 
+    <div class="card" id="dedicatedCard" style="display:none">
+      <h2>🎯 כספים ייעודיים (קולות קוראים)</h2>
+      <p class="hint">מעקב ניצול לכל מקור ייעודי — כמה אושר, כמה נוצל וכמה נותר. כסף ייעודי אסור שיחרוג ואסור "לשאול" ממנו לצרכים אחרים.</p>
+      <div class="scroll">
+        <table id="dedicatedTable">
+          <thead><tr><th>מקור ייעודי</th><th>מאושר</th><th>נוצל</th><th>יתרה</th><th>ניצול</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
         <h2 style="margin:0">תקציב מול ביצוע</h2>
@@ -1308,23 +1319,37 @@ function renderDashboard(){
   }));
 
   // סיכומים כלליים + ספירת חריגות (על כל הנתונים — ללא תלות בסינון)
+  // תקציב ראשי אפקטיבי: מהתכנון אם השורה מקושרת, אחרת סכום התתי-קטגוריות
   let gB=0,gA=0, overCount=0, overSum=0, projOverCount=0;
-  for(const m of mains) for(const c of m.cats){
-    gB+=c.annual; gA+=c.actual;
-    if(c.annual>0 && c.actual>c.annual){ overCount++; overSum+=c.actual-c.annual; }
-    else { const p=projForecast(c.actual,frac); if(p!=null && c.annual>0 && p>c.annual) projOverCount++; }
+  for(const m of mains){
+    const subSum=m.cats.reduce((s,c)=>s+c.annual,0);
+    const pl=plannedBudgetFor(m.main);
+    m.effB=(pl!=null)?pl:subSum; m.subSum=subSum; m.planned=(pl!=null);
+    gB+=m.effB;
+    for(const c of m.cats){
+      gA+=c.actual;
+      if(c.annual>0 && c.actual>c.annual){ overCount++; overSum+=c.actual-c.annual; }
+      else { const p=projForecast(c.actual,frac); if(p!=null && c.annual>0 && p>c.annual) projOverCount++; }
+    }
   }
   const gR=gB*frac;
 
-  for(const {main,cats} of mains){
-    let mB=0,mA=0; cats.forEach(c=>{mB+=c.annual;mA+=c.actual;});
+  for(const m of mains){
+    const {main,cats}=m;
+    let mA=0; cats.forEach(c=>{mA+=c.actual;});
+    const mB=m.effB;
     let subs = cats.map(c=>({...c, relPct:relPctOf(c.annual,c.actual,frac), exc:isExc(c.annual,c.actual,frac)}));
     if(onlyExc) subs=subs.filter(s=>s.exc);
     if(onlyExc && !subs.length) continue;
     subs = sortSubs(subs, sortMode, frac);
     const mRelPct = relPctOf(mB,mA,frac);
+    const planBadge=m.planned
+      ? (Math.abs(m.subSum-mB)>1
+          ? ` <span title="מקושר לתכנון · פירוט התתי-קטגוריות (${ils(m.subSum)}) שונה מהתקציב המתוכנן" style="cursor:help">🧮⚠️</span>`
+          : ` <span title="התקציב מגיע מגיליון התכנון" style="cursor:help">🧮</span>`)
+      : "";
     tb.insertAdjacentHTML("beforeend",
-      `<tr class="main-row"><td>${esc(main)}</td>
+      `<tr class="main-row"><td>${esc(main)}${planBadge}</td>
         <td class="num">${ils(mB)}</td><td class="num">${ils(mA)}</td>
         <td class="num ${mB-mA<0?"neg":""}">${ils(mB-mA)}</td>
         <td>${progressBar(mA,mB,frac)}</td>
@@ -1367,12 +1392,36 @@ function renderDashboard(){
   }
 
   renderDashChart(mains, frac);
+  renderDedicated(frac, actual);
   renderMonthly();
+}
+
+/* כספים ייעודיים: ניצול לכל תת-קטגוריה של קטגוריות ק"ק/גפן */
+function renderDedicated(frac, actual){
+  const card=document.getElementById("dedicatedCard"); if(!card) return;
+  const DED=/קולות? קוראים|ק"ק|גפן/;
+  const rows=state.categories.filter(c=>DED.test(c.main||""));
+  if(!rows.length){ card.style.display="none"; return; }
+  card.style.display="";
+  const tb=document.querySelector("#dedicatedTable tbody"); if(!tb) return;
+  let tB=0,tA=0;
+  tb.innerHTML=rows.map(c=>{
+    const a=(actual||actualBySub())[c.main+"||"+c.sub]||0, b=Number(c.annualBudget)||0, rem=b-a;
+    tB+=b; tA+=a;
+    return `<tr class="${b>0&&a>b?"row-exc":""}">
+      <td>${esc(c.main)} / <b>${esc(c.sub)}</b></td>
+      <td class="num">${ils(b)}</td>
+      <td class="num">${ils(a)}</td>
+      <td class="num ${rem<0?"neg":""}">${ils(rem)}</td>
+      <td>${progressBar(a,b,frac)}</td></tr>`;
+  }).join("")+
+  `<tr class="grand"><td>סה"כ ייעודיים</td><td class="num">${ils(tB)}</td><td class="num">${ils(tA)}</td>
+    <td class="num ${tB-tA<0?"neg":""}">${ils(tB-tA)}</td><td>${progressBar(tA,tB,frac)}</td></tr>`;
 }
 
 function renderDashChart(mains, frac){
   const el=document.getElementById("dashChart"); if(!el) return;
-  const data=mains.map(m=>{let B=0,A=0;m.cats.forEach(c=>{B+=c.annual;A+=c.actual;});return {main:m.main,B,A};})
+  const data=mains.map(m=>{let A=0;m.cats.forEach(c=>{A+=c.actual;});const B=(m.effB!=null)?m.effB:m.cats.reduce((s,c)=>s+c.annual,0);return {main:m.main,B,A};})
     .filter(d=>d.B>0||d.A>0).sort((a,b)=>b.A-a.A);
   const maxV=Math.max(1,...data.map(d=>Math.max(d.B,d.A)));
   el.innerHTML = data.map(d=>`<div class="chart-row">
@@ -1448,6 +1497,7 @@ function ensureFields(s){
   plMigrateYouth(s.plan);
   plMigrateHourly(s.plan);
   plMigrateTeaching(s.plan);
+  plMigrateLinks(s.plan, s.categories);
   return s;
 }
 function wsMonths(){ return fyMonths(); }
@@ -1600,6 +1650,28 @@ function PLAN_SEED_DATA(){ return {
   salParams:{monthFactor:12.5, employerFactor:1.35, costPerWeeklyHour:10000, monthlyHours:182},
   salGroups:[]
 }; }
+/* קישור שורות הוצאה בתכנון לקטגוריות ראשיות בביצוע — מיפוי אוטומטי חד-פעמי לפי דמיון שם */
+function plNormName(s){ return String(s||"").replace(/^הוצאות\s*/,"").replace(/\(.*?\)/g,"").replace(/[\s"׳'-]/g,""); }
+function plMigrateLinks(p, cats){
+  if(!p || !Array.isArray(p.expenses)) return p;
+  if(p.expenses.some(r=>r.link!==undefined)) return p; // כבר עבר מיפוי
+  const seen=[]; for(const c of (cats||[])){ if(!seen.includes(c.main)) seen.push(c.main); }
+  const mains=seen;
+  p.expenses.forEach(r=>{
+    r.link="";
+    if(r.salary) return; // שכר לא נמדד בביצוע
+    const rn=plNormName(r.name); if(!rn) return;
+    const hits=mains.filter(m=>{ const mn=plNormName(m); return mn && (mn.includes(rn)||rn.includes(mn)); });
+    if(hits.length===1) r.link=hits[0]; // מקשרים רק בהתאמה חד-משמעית
+  });
+  return p;
+}
+/* התקציב האפקטיבי של קטגוריה ראשית בדשבורד: סכום מהתכנון אם מקושר, אחרת סכום התתי-קטגוריות */
+function plannedBudgetFor(main){
+  if(!state.plan || !Array.isArray(state.plan.expenses)) return null;
+  const r=state.plan.expenses.find(x=>!x.salary && x.link===main);
+  return r ? (Number(r.amount)||0) : null;
+}
 /* עמודת ש"ש מוצגת רק בקבוצות הוראה — סימון אוטומטי לפי שם הקבוצה (ניתן לשינוי ידני) */
 function plMigrateTeaching(p){
   (p&&p.salGroups||[]).forEach(g=>{ if(g.teaching===undefined) g.teaching=/חינוך|מורים|הוראה/.test(g.name||""); });
@@ -1644,6 +1716,7 @@ function plApplyImportedPlan(obj){
   plMigrateYouth(obj);
   plMigrateHourly(obj);
   plMigrateTeaching(obj);
+  plMigrateLinks(obj, state.categories);
   state.plan=plEnsurePlanIds(obj);
   save(); renderPlanBudget();
   return null;
@@ -1730,12 +1803,20 @@ function plRowsHtml(list){
     if(r.salary){
       return `<tr class="pl-locked"><td>🔗 ${esc(r.name)}</td>
         <td class="num"><b>${ils(t.sal)}</b></td>
+        ${list==="expenses"?'<td><span class="hint" style="margin:0">—</span></td>':""}
         <td><span class="hint" style="margin:0">מחושב אוטומטית מגיליון השכר</span> <button class="btn mini sec noprint" onclick="plSwitchView('salary')">לגיליון השכר ←</button></td>
         <td class="noprint"></td></tr>`;
     }
     const amt=Number(r.amount)||0;
+    const linkCell=list==="expenses"
+      ? `<td><select onchange="plUpdRow('${list}','${r.id}','link',this.value)" title="הסכום המתוכנן יהפוך לתקציב הקטגוריה בדשבורד">
+           <option value="">— לא מקושר —</option>
+           ${mainOrder().map(m=>`<option value="${esc(m)}" ${r.link===m?"selected":""}>${esc(m)}</option>`).join("")}
+         </select></td>`
+      : "";
     return `<tr><td><input class="pl-name" value="${esc(r.name)}" onchange="plUpdRow('${list}','${r.id}','name',this.value)"></td>
       <td class="num"><input class="pl-num" type="number" step="any" value="${amt}" onchange="plUpdRow('${list}','${r.id}','amount',this.value)"></td>
+      ${linkCell}
       <td><input class="pl-note" value="${esc(r.note||"")}" onchange="plUpdRow('${list}','${r.id}','note',this.value)"></td>
       <td class="noprint"><button class="btn danger" onclick="plDelRow('${list}','${r.id}')">מחק</button></td></tr>`;
   }).join("");
@@ -1757,11 +1838,12 @@ function renderPlGeneral(t){
   </div>
   <div class="card">
     <h2>🧾 הוצאות</h2>
+    <p class="hint">"מקושר לדשבורד" = הסכום המתוכנן כאן קובע את התקציב השנתי של הקטגוריה במסך "תקציב מול ביצוע".</p>
     <div class="scroll"><table>
-      <thead><tr><th>סעיף</th><th>סכום</th><th>הערה</th><th class="noprint"></th></tr></thead>
+      <thead><tr><th>סעיף</th><th>סכום</th><th>מקושר לדשבורד</th><th>הערה</th><th class="noprint"></th></tr></thead>
       <tbody>${plRowsHtml("expenses")}
-      <tr class="grand"><td>סה"כ הוצאות</td><td class="num">${ils(t.exp)}</td><td></td><td class="noprint"></td></tr>
-      <tr class="grand"><td>מאזן</td><td class="num" style="color:${t.bal<0?"var(--red)":"var(--green)"}">${ils(t.bal)}</td><td></td><td class="noprint"></td></tr></tbody>
+      <tr class="grand"><td>סה"כ הוצאות</td><td class="num">${ils(t.exp)}</td><td></td><td></td><td class="noprint"></td></tr>
+      <tr class="grand"><td>מאזן</td><td class="num" style="color:${t.bal<0?"var(--red)":"var(--green)"}">${ils(t.bal)}</td><td></td><td></td><td class="noprint"></td></tr></tbody>
     </table></div>
     <div class="btnbar noprint"><button class="btn sec" onclick="plAddRow('expenses')">+ שורת הוצאה</button></div>
   </div>
@@ -1868,8 +1950,8 @@ function renderPlSalary(t){
 /* עדכוני תכנון */
 function plUpdRow(list,id,field,val){
   const r=state.plan[list].find(x=>x.id===id); if(!r) return;
-  if(field==="name"||field==="note") r[field]=val.trim(); else r[field]=Number(val)||0;
-  save(); renderPlanBudget();
+  if(field==="name"||field==="note"||field==="link") r[field]=val.trim(); else r[field]=Number(val)||0;
+  save(); renderPlanBudget(); if(field==="link"||field==="amount") renderDashboard();
 }
 function plAddRow(list){ state.plan[list].push({id:uid(), name:"", amount:0, prev:0, note:""}); save(); renderPlanBudget(); }
 function plDelRow(list,id){
