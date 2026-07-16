@@ -2006,10 +2006,9 @@ function renderPlSadin(){
     if(!sum[t]) sum[t]=Array(cls.length).fill(0);
     sum[t][i]+=Number(c.h)||0;
   }));
-  const whByName={}, roleByName={};
+  const roleByName={};
   state.plan.salGroups.filter(g=>g.teaching).forEach(g=>g.emps.forEach(e=>{
     const n=(e.name||"").trim(); if(!n) return;
-    whByName[n]=(whByName[n]||0)+(Number(e.wh)||0);
     const role=(e.role||"").trim();
     if(role){ if(!roleByName[n]) roleByName[n]=[]; if(!roleByName[n].includes(role)) roleByName[n].push(role); }
   }));
@@ -2017,21 +2016,12 @@ function renderPlSadin(){
     const tot=+hs.reduce((a,b)=>a+b,0).toFixed(2);
     const gmul=Number(sd.gmul[name])||0;
     const totAll=+(tot+gmul).toFixed(2);
-    const wh=whByName[name];
-    let diffCell;
-    if(wh===undefined) diffCell='<span class="hint" style="margin:0">לא בגיליון השכר</span>';
-    else{
-      const diff=+(totAll-wh).toFixed(2);
-      diffCell=Math.abs(diff)<0.01 ? '<span style="color:var(--green);font-weight:700">תואם ✓</span>'
-        : `<span style="color:var(--red);font-weight:700">${diff>0?"+":""}${diff}</span>`;
-    }
     return `<tr><td>${esc(name)}</td>
       <td style="font-size:12px;color:#475569">${esc((roleByName[name]||[]).join(" · ")||"—")}</td>
       ${hs.map(h=>`<td class="num">${+(+h).toFixed(2)}</td>`).join("")}
       <td class="num">${tot}</td>
       <td class="num"><input class="pl-mini" style="width:56px" type="number" step="any" value="${gmul||""}" placeholder="0" data-name="${esc(name)}" onchange="sdUpdGmul(this.dataset.name,this.value)"></td>
-      <td class="num"><b>${totAll}</b></td>
-      <td class="num">${wh!==undefined?+wh.toFixed(2):"—"}</td><td>${diffCell}</td></tr>`;
+      <td class="num"><b>${totAll}</b></td></tr>`;
   }).join("");
 
   host.innerHTML=`
@@ -2051,10 +2041,10 @@ function renderPlSadin(){
   <datalist id="plTeacherList">${teachers.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
   <div class="card">
     <h2>👨‍🏫 סיכום ש"ש לכל עובד הוראה</h2>
-    <p class="hint">מחושב אוטומטית מהסדין. "פער" = (סה"כ בסדין + גמול בגרות) פחות ה-ש"ש שמוגדר לעובד בגיליון השכר.</p>
-    <div class="scroll"><table style="max-width:960px">
-      <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th><th>ש"ש בשכר</th><th>פער</th></tr></thead>
-      <tbody>${sumRows||`<tr><td colspan="${cls.length+7}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
+    <p class="hint">מחושב אוטומטית מהסדין. "סה"כ כולל גמול" = סה"כ השעות בסדין + גמול בגרות.</p>
+    <div class="scroll"><table style="max-width:900px">
+      <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th></tr></thead>
+      <tbody>${sumRows||`<tr><td colspan="${cls.length+5}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
     </table></div>
   </div>`;
 }
