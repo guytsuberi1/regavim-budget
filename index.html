@@ -1680,6 +1680,7 @@ function plMigrateSadin(p){
   if(!p) return p;
   if(!p.sadin || !Array.isArray(p.sadin.rows)) p.sadin={classes:["ט1","י1","י2","יא1","יב1"], rows:[]};
   if(!Array.isArray(p.sadin.classes) || !p.sadin.classes.length) p.sadin.classes=["ט1","י1","י2","יא1","יב1"];
+  if(!p.sadin.gmul || typeof p.sadin.gmul!=="object") p.sadin.gmul={}; // גמול בגרות לכל מורה (לפי שם)
   p.sadin.rows.forEach(r=>{
     if(!r.id) r.id=uid();
     if(!Array.isArray(r.cells)) r.cells=[];
@@ -2005,23 +2006,32 @@ function renderPlSadin(){
     if(!sum[t]) sum[t]=Array(cls.length).fill(0);
     sum[t][i]+=Number(c.h)||0;
   }));
-  const whByName={};
+  const whByName={}, roleByName={};
   state.plan.salGroups.filter(g=>g.teaching).forEach(g=>g.emps.forEach(e=>{
     const n=(e.name||"").trim(); if(!n) return;
     whByName[n]=(whByName[n]||0)+(Number(e.wh)||0);
+    const role=(e.role||"").trim();
+    if(role){ if(!roleByName[n]) roleByName[n]=[]; if(!roleByName[n].includes(role)) roleByName[n].push(role); }
   }));
   const sumRows=Object.entries(sum).sort((a,b)=>b[1].reduce((x,y)=>x+y,0)-a[1].reduce((x,y)=>x+y,0)).map(([name,hs])=>{
     const tot=+hs.reduce((a,b)=>a+b,0).toFixed(2);
+    const gmul=Number(sd.gmul[name])||0;
+    const totAll=+(tot+gmul).toFixed(2);
     const wh=whByName[name];
     let diffCell;
     if(wh===undefined) diffCell='<span class="hint" style="margin:0">לא בגיליון השכר</span>';
     else{
-      const diff=+(tot-wh).toFixed(2);
+      const diff=+(totAll-wh).toFixed(2);
       diffCell=Math.abs(diff)<0.01 ? '<span style="color:var(--green);font-weight:700">תואם ✓</span>'
         : `<span style="color:var(--red);font-weight:700">${diff>0?"+":""}${diff}</span>`;
     }
-    return `<tr><td>${esc(name)}</td>${hs.map(h=>`<td class="num">${+(+h).toFixed(2)}</td>`).join("")}
-      <td class="num"><b>${tot}</b></td><td class="num">${wh!==undefined?+wh.toFixed(2):"—"}</td><td>${diffCell}</td></tr>`;
+    return `<tr><td>${esc(name)}</td>
+      <td style="font-size:12px;color:#475569">${esc((roleByName[name]||[]).join(" · ")||"—")}</td>
+      ${hs.map(h=>`<td class="num">${+(+h).toFixed(2)}</td>`).join("")}
+      <td class="num">${tot}</td>
+      <td class="num"><input class="pl-mini" style="width:56px" type="number" step="any" value="${gmul||""}" placeholder="0" data-name="${esc(name)}" onchange="sdUpdGmul(this.dataset.name,this.value)"></td>
+      <td class="num"><b>${totAll}</b></td>
+      <td class="num">${wh!==undefined?+wh.toFixed(2):"—"}</td><td>${diffCell}</td></tr>`;
   }).join("");
 
   host.innerHTML=`
@@ -2041,10 +2051,10 @@ function renderPlSadin(){
   <datalist id="plTeacherList">${teachers.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
   <div class="card">
     <h2>👨‍🏫 סיכום ש"ש לכל עובד הוראה</h2>
-    <p class="hint">מחושב אוטומטית מהסדין. "פער" = סה"כ בסדין פחות ה-ש"ש שמוגדר לעובד בגיליון השכר.</p>
-    <div class="scroll"><table style="max-width:860px">
-      <thead><tr><th>מורה</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>ש"ש בשכר</th><th>פער</th></tr></thead>
-      <tbody>${sumRows||`<tr><td colspan="${cls.length+4}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
+    <p class="hint">מחושב אוטומטית מהסדין. "פער" = (סה"כ בסדין + גמול בגרות) פחות ה-ש"ש שמוגדר לעובד בגיליון השכר.</p>
+    <div class="scroll"><table style="max-width:960px">
+      <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th><th>ש"ש בשכר</th><th>פער</th></tr></thead>
+      <tbody>${sumRows||`<tr><td colspan="${cls.length+7}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
     </table></div>
   </div>`;
 }
@@ -2057,6 +2067,11 @@ function sdUpdCell(id,ci,field,val){
 function sdAddRow(){ state.plan.sadin.rows.push({id:uid(), subject:"", cells:state.plan.sadin.classes.map(()=>({h:0,t:""})), note:""}); save(); renderPlanBudget(); }
 function sdDelRow(id){ if(!confirm("למחוק את המקצוע?")) return; state.plan.sadin.rows=state.plan.sadin.rows.filter(x=>x.id!==id); save(); renderPlanBudget(); }
 function sdUpdClass(i,val){ val=val.trim(); if(val) state.plan.sadin.classes[i]=val; save(); renderPlanBudget(); }
+function sdUpdGmul(name,val){
+  const v=Number(val)||0;
+  if(v) state.plan.sadin.gmul[name]=v; else delete state.plan.sadin.gmul[name];
+  save(); renderPlanBudget();
+}
 function sdAddClass(){
   const name=prompt("שם הכיתה החדשה:","");
   if(name===null) return;
