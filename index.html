@@ -1989,7 +1989,7 @@ function renderPlSadin(){
   const sd=state.plan.sadin, cls=sd.classes;
   // רשימת מורים להשלמה אוטומטית — מקבוצות ההוראה בגיליון השכר
   const teachers=[...new Set(state.plan.salGroups.filter(g=>g.teaching).flatMap(g=>g.emps.map(e=>(e.name||"").trim())).filter(n=>n && !n.startsWith("חדש")))].sort();
-  const head=`<tr><th style="min-width:140px">מקצוע</th>${cls.map((c,i)=>`<th colspan="2" style="text-align:center;white-space:nowrap"><input class="pl-mini" style="width:60px;text-align:center;font-weight:700" value="${esc(c)}" onchange="sdUpdClass(${i},this.value)"><button class="btn danger noprint" style="padding:1px 6px;font-size:11px;margin-inline-start:4px" onclick="sdDelClass(${i})" title="מחיקת כיתה">✕</button></th>`).join("")}<th>הערות</th><th class="noprint"></th></tr>
+  const head=`<tr><th style="min-width:140px">מקצוע</th>${cls.map((c,i)=>`<th colspan="2" style="text-align:center;white-space:nowrap" ondragover="sdColDragOver(event)" ondragleave="sdColDragLeave(event)" ondrop="sdColDrop(event,${i})"><span class="pl-drag noprint" draggable="true" ondragstart="sdColDragStart(event,${i})" ondragend="sdColDragEnd(event)" title="גרור להזזת הכיתה">⠿</span><input class="pl-mini" style="width:60px;text-align:center;font-weight:700" value="${esc(c)}" onchange="sdUpdClass(${i},this.value)"><button class="btn danger noprint" style="padding:1px 6px;font-size:11px;margin-inline-start:4px" onclick="sdDelClass(${i})" title="מחיקת כיתה">✕</button></th>`).join("")}<th>הערות</th><th class="noprint"></th></tr>
   <tr><th></th>${cls.map(()=>'<th style="font-weight:400">שעות</th><th style="font-weight:400">מורה</th>').join("")}<th></th><th class="noprint"></th></tr>`;
   const rows=sd.rows.map(r=>`<tr>
     <td><input class="pl-name" style="width:140px" value="${esc(r.subject)}" onchange="sdUpdRow('${r.id}','subject',this.value)"></td>
@@ -2067,6 +2067,21 @@ function sdUpdCell(id,ci,field,val){
 function sdAddRow(){ state.plan.sadin.rows.push({id:uid(), subject:"", cells:state.plan.sadin.classes.map(()=>({h:0,t:""})), note:""}); save(); renderPlanBudget(); }
 function sdDelRow(id){ if(!confirm("למחוק את המקצוע?")) return; state.plan.sadin.rows=state.plan.sadin.rows.filter(x=>x.id!==id); save(); renderPlanBudget(); }
 function sdUpdClass(i,val){ val=val.trim(); if(val) state.plan.sadin.classes[i]=val; save(); renderPlanBudget(); }
+/* גרירת עמודות כיתה — מעביר את הכיתה עם כל השעות והשיבוצים שלה */
+let _sdColDrag=null;
+function sdColDragStart(e,i){ _sdColDrag=i; e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",String(i));}catch(_){} }
+function sdColDragOver(e){ if(_sdColDrag==null) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; e.currentTarget.style.background="#eef3fa"; }
+function sdColDragLeave(e){ e.currentTarget.style.background=""; }
+function sdColDragEnd(e){ _sdColDrag=null; }
+function sdColDrop(e,ti){
+  e.preventDefault(); e.currentTarget.style.background="";
+  const fi=_sdColDrag; _sdColDrag=null;
+  if(fi==null || fi===ti) return;
+  const sd=state.plan.sadin;
+  const c=sd.classes.splice(fi,1)[0]; sd.classes.splice(ti,0,c);
+  sd.rows.forEach(r=>{ const cell=r.cells.splice(fi,1)[0]; r.cells.splice(ti,0,cell); });
+  save(); renderPlanBudget(); toast("סדר הכיתות עודכן");
+}
 function sdUpdGmul(name,val){
   const v=Number(val)||0;
   if(v) state.plan.sadin.gmul[name]=v; else delete state.plan.sadin.gmul[name];
