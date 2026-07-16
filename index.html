@@ -1898,7 +1898,7 @@ function renderPlSalary(t){
         <input value="${esc(g.name)}" onchange="plUpdGroup('${g.id}','name',this.value)">
         <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b>${(showWh&&whTotal>0)?` · סה"כ ש"ש: <b>${+whTotal.toFixed(2)}</b>`:""}</span>
         <span style="flex:1"></span>
-        <label class="seg noprint" style="padding:5px 10px;font-size:12px" title="הצג עמודת ש"ש (בדרך כלל לצוות הוראה)"><input type="checkbox" ${showWh?"checked":""} onchange="plUpdGroup('${g.id}','teaching',this.checked)"> ש"ש</label>
+        <label class="seg noprint" style="padding:5px 10px;font-size:13px;border-radius:10px;gap:5px;font-weight:600" title="הצג עמודת ש"ש (בדרך כלל לצוות הוראה)"><input type="checkbox" ${showWh?"checked":""} onchange="plUpdGroup('${g.id}','teaching',this.checked)"> ש"ש</label>
         <button class="btn sec mini noprint" onclick="plAddEmp('${g.id}')">+ עובד</button>
         <button class="btn danger noprint" onclick="plDelGroup('${g.id}')">מחיקת קבוצה</button>
       </div>
