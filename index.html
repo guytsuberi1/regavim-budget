@@ -1823,7 +1823,13 @@ function renderPlanBudget(){
   document.getElementById("plGeneral").style.display=plView==="general"?"":"none";
   document.getElementById("plSalary").style.display=plView==="salary"?"":"none";
   document.getElementById("plSadin").style.display=plView==="sadin"?"":"none";
+  // שמירת מיקומי גלילה — רינדור מחדש מאפס את גלילת הטבלאות (קפיצה ימינה ב-RTL)
+  const sec=document.getElementById("planbudget");
+  const scrolls=sec?[...sec.querySelectorAll(".scroll")].map(el=>({l:el.scrollLeft,t:el.scrollTop})):[];
+  const winY=(typeof window.scrollY==="number")?window.scrollY:0;
   if(plView==="general") renderPlGeneral(t); else if(plView==="salary") renderPlSalary(t); else renderPlSadin();
+  if(sec) [...sec.querySelectorAll(".scroll")].forEach((el,i)=>{ if(scrolls[i]){ el.scrollLeft=scrolls[i].l; el.scrollTop=scrolls[i].t; } });
+  if(typeof window.scrollTo==="function") window.scrollTo(0,winY);
 }
 
 function plRowsHtml(list){
@@ -1982,7 +1988,7 @@ function renderPlSadin(){
   const sd=state.plan.sadin, cls=sd.classes;
   // רשימת מורים להשלמה אוטומטית — מקבוצות ההוראה בגיליון השכר
   const teachers=[...new Set(state.plan.salGroups.filter(g=>g.teaching).flatMap(g=>g.emps.map(e=>(e.name||"").trim())).filter(n=>n && !n.startsWith("חדש")))].sort();
-  const head=`<tr><th style="min-width:140px">מקצוע</th>${cls.map((c,i)=>`<th colspan="2" style="text-align:center"><input class="pl-mini" style="width:60px;text-align:center;font-weight:700" value="${esc(c)}" onchange="sdUpdClass(${i},this.value)"></th>`).join("")}<th>הערות</th><th class="noprint"></th></tr>
+  const head=`<tr><th style="min-width:140px">מקצוע</th>${cls.map((c,i)=>`<th colspan="2" style="text-align:center;white-space:nowrap"><input class="pl-mini" style="width:60px;text-align:center;font-weight:700" value="${esc(c)}" onchange="sdUpdClass(${i},this.value)"><button class="btn danger noprint" style="padding:1px 6px;font-size:11px;margin-inline-start:4px" onclick="sdDelClass(${i})" title="מחיקת כיתה">✕</button></th>`).join("")}<th>הערות</th><th class="noprint"></th></tr>
   <tr><th></th>${cls.map(()=>'<th style="font-weight:400">שעות</th><th style="font-weight:400">מורה</th>').join("")}<th></th><th class="noprint"></th></tr>`;
   const rows=sd.rows.map(r=>`<tr>
     <td><input class="pl-name" style="width:140px" value="${esc(r.subject)}" onchange="sdUpdRow('${r.id}','subject',this.value)"></td>
@@ -2029,7 +2035,8 @@ function renderPlSadin(){
       <thead>${head}</thead>
       <tbody>${rows||`<tr><td colspan="${cls.length*2+3}" style="text-align:center;color:var(--muted)">אין מקצועות — לחץ "+ מקצוע" או ייבא את קובץ הסדין דרך "📥 ייבוא נתונים"</td></tr>`}${totals}</tbody>
     </table></div>
-    <div class="btnbar noprint"><button class="btn sec" onclick="sdAddRow()">+ מקצוע</button></div>
+    <div class="btnbar noprint"><button class="btn sec" onclick="sdAddRow()">+ מקצוע</button>
+      <button class="btn sec" onclick="sdAddClass()">+ כיתה</button></div>
   </div>
   <datalist id="plTeacherList">${teachers.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
   <div class="card">
@@ -2050,6 +2057,23 @@ function sdUpdCell(id,ci,field,val){
 function sdAddRow(){ state.plan.sadin.rows.push({id:uid(), subject:"", cells:state.plan.sadin.classes.map(()=>({h:0,t:""})), note:""}); save(); renderPlanBudget(); }
 function sdDelRow(id){ if(!confirm("למחוק את המקצוע?")) return; state.plan.sadin.rows=state.plan.sadin.rows.filter(x=>x.id!==id); save(); renderPlanBudget(); }
 function sdUpdClass(i,val){ val=val.trim(); if(val) state.plan.sadin.classes[i]=val; save(); renderPlanBudget(); }
+function sdAddClass(){
+  const name=prompt("שם הכיתה החדשה:","");
+  if(name===null) return;
+  const nm=name.trim()||("כיתה "+(state.plan.sadin.classes.length+1));
+  state.plan.sadin.classes.push(nm);
+  state.plan.sadin.rows.forEach(r=>r.cells.push({h:0,t:""}));
+  save(); renderPlanBudget(); toast('נוספה כיתה "'+nm+'"');
+}
+function sdDelClass(i){
+  const sd=state.plan.sadin, nm=sd.classes[i];
+  if(sd.classes.length<=1){ toast("חייבת להישאר לפחות כיתה אחת"); return; }
+  const hours=sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0);
+  if(!confirm('למחוק את הכיתה "'+nm+'"'+(hours?(' על '+hours+' שעות השיבוץ שלה'):'')+'?')) return;
+  sd.classes.splice(i,1);
+  sd.rows.forEach(r=>r.cells.splice(i,1));
+  save(); renderPlanBudget();
+}
 function sdExportCsv(){
   const sd=state.plan.sadin, cls=sd.classes;
   const lines=[["מקצוע"].concat(cls.flatMap(c=>["שעות "+c,"מורה "+c])).concat(["הערות"]).join(",")];
