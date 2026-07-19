@@ -177,7 +177,8 @@
   .pl-params input{width:110px}
   .pl-drag{cursor:grab;color:#94a3b8;font-size:16px;user-select:none;padding:0 4px}
   .pl-drag:active{cursor:grabbing}
-  #planbudget input[type="checkbox"]{width:15px;height:15px;padding:0;margin:0;flex:none}
+  #planbudget input[type="checkbox"]{width:13px;height:13px;padding:0;margin:0;flex:none}
+  #planbudget .pl-grp-head .btn{height:28px;box-sizing:border-box;display:inline-flex;align-items:center}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -1933,7 +1934,7 @@ function renderPlSalary(t){
         <input value="${esc(g.name)}" onchange="plUpdGroup('${g.id}','name',this.value)">
         <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b>${(showWh&&whTotal>0)?` · סה"כ ש"ש: <b>${+whTotal.toFixed(2)}</b>`:""}</span>
         <span style="flex:1"></span>
-        <label class="seg noprint" style="padding:5px 10px;font-size:13px;border-radius:10px;gap:5px;font-weight:600" title="הצג עמודת ש"ש (בדרך כלל לצוות הוראה)"><input type="checkbox" ${showWh?"checked":""} onchange="plUpdGroup('${g.id}','teaching',this.checked)"> ש"ש</label>
+        <label class="seg noprint" style="padding:0 10px;height:28px;box-sizing:border-box;font-size:13px;border-radius:10px;gap:5px;font-weight:600;align-items:center" title="הצג עמודת ש"ש (בדרך כלל לצוות הוראה)"><input type="checkbox" ${showWh?"checked":""} onchange="plUpdGroup('${g.id}','teaching',this.checked)"> ש"ש</label>
         <button class="btn sec mini noprint" onclick="plAddEmp('${g.id}')">+ עובד</button>
         <button class="btn danger noprint" onclick="plDelGroup('${g.id}')">מחיקת קבוצה</button>
       </div>
