@@ -2034,7 +2034,7 @@ function renderPlSadin(){
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">📅 סדין — מערכת שעות שבועית</h2>
-      <button class="btn sec mini noprint" onclick="sdExportCsv()" title="ייצוא ל-CSV (Excel)" style="font-size:18px;padding:6px 10px">⬇️</button>
+      <button class="btn sec mini noprint" onclick="sdExportXls()" title="ייצוא לאקסל (טבלה מעוצבת + סיכום)" style="font-size:18px;padding:6px 10px">⬇️</button>
     </div>
     <p class="hint">שעות ומורה לכל מקצוע בכל כיתה. סיכום המורים למטה מתעדכן אוטומטית מהסדין ומושווה ל-ש"ש שבגיליון השכר.</p>
     <div class="scroll"><table>
@@ -2158,13 +2158,54 @@ function sdDelClass(i){
   sd.rows.forEach(r=>r.cells.splice(i,1));
   save(); renderPlanBudget();
 }
-function sdExportCsv(){
+function sdExportCsv(){ sdExportXls(); } // תאימות לאחור
+function sdExportXls(){
   const sd=state.plan.sadin, cls=sd.classes;
-  const lines=[["מקצוע"].concat(cls.flatMap(c=>["שעות "+c,"מורה "+c])).concat(["הערות"]).join(",")];
-  for(const r of sd.rows)
-    lines.push([r.subject].concat(r.cells.flatMap(c=>[c.h||0,c.t||""])).concat([r.note||""]).map(csvCell).join(","));
-  lines.push(["סה\"כ"].concat(cls.flatMap((c,i)=>[+sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0).toFixed(2),""])).concat([""]).map(csvCell).join(","));
-  download("סדין-"+new Date().toISOString().slice(0,10)+".csv","﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
+  const CLR=["#fde9d3","#d9efd9","#e3ecfb","#e3ecfb","#ede1f7","#ede1f7","#fce8f0","#e5f6f6"];
+  const num=v=>{ v=+(+v).toFixed(2); return v||v===0?String(v):""; };
+  // ---- טבלה 1: הסדין ----
+  let h1='<table dir="rtl" style="border-collapse:collapse"><tr>'+
+    '<th rowspan="2" style="border:1px solid #666;background:#fff7cc;padding:5px 9px;min-width:150px">מקצוע</th>'+
+    cls.map((c,i)=>`<th colspan="2" style="border:1px solid #666;background:${CLR[i%CLR.length]};padding:5px 9px;font-weight:bold">${esc(c)}</th>`).join("")+
+    '<th rowspan="2" style="border:1px solid #666;background:#eef2f7;padding:5px 9px">הערות</th></tr><tr>'+
+    cls.map(()=>'<th style="border:1px solid #666;background:#f4f6f8;padding:3px 6px">שעות</th><th style="border:1px solid #666;background:#f4f6f8;padding:3px 6px">מורה</th>').join("")+
+    '</tr>';
+  for(const r of sd.rows){
+    h1+='<tr><td style="border:1px solid #999;text-align:right;padding:4px 8px;background:#fffdf3;font-weight:bold">'+esc(r.subject)+'</td>'+
+      r.cells.map(c=>`<td style="border:1px solid #999;text-align:center;padding:4px 8px">${num(c.h)}</td><td style="border:1px solid #999;text-align:center;padding:4px 8px">${esc(c.t||"")}</td>`).join("")+
+      '<td style="border:1px solid #999;text-align:right;padding:4px 8px;color:#555">'+esc(r.note||"")+'</td></tr>';
+  }
+  h1+='<tr><td style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:right;padding:5px 9px">סה"כ שעות</td>'+
+    cls.map((c,i)=>`<td style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:center">${num(sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0))}</td><td style="border:1px solid #666;background:#e8f0e8"></td>`).join("")+
+    '<td style="border:1px solid #666;background:#e8f0e8"></td></tr></table>';
+
+  // ---- טבלה 2: סיכום ש"ש למורה ----
+  const roleBy={};
+  state.plan.salGroups.filter(g=>g.teaching).forEach(g=>g.emps.forEach(e=>{
+    const n=(e.name||"").trim(); if(!n) return; const ro=(e.role||"").trim();
+    if(ro){ (roleBy[n]=roleBy[n]||[]); if(!roleBy[n].includes(ro)) roleBy[n].push(ro); }
+  }));
+  const sum={};
+  sd.rows.forEach(r=>r.cells.forEach((c,i)=>{ const t=(c.t||"").trim(); if(!t||t==="-")return; (sum[t]=sum[t]||Array(cls.length).fill(0)); sum[t][i]+=Number(c.h)||0; }));
+  const ordered=Object.entries(sum).sort((a,b)=>b[1].reduce((x,y)=>x+y,0)-a[1].reduce((x,y)=>x+y,0));
+  let h2='<table dir="rtl" style="border-collapse:collapse"><tr>'+
+    ['מורה','תפקיד',...cls,'סה"כ בסדין','גמול בגרות','סה"כ כולל גמול'].map(x=>`<th style="border:1px solid #666;background:#e3ecfb;padding:5px 9px;font-weight:bold">${esc(x)}</th>`).join("")+'</tr>';
+  for(const [name,hs] of ordered){
+    const tot=+hs.reduce((a,b)=>a+b,0).toFixed(2), gm=Number(sd.gmul[name])||0;
+    h2+='<tr><td style="border:1px solid #999;text-align:right;padding:4px 8px;font-weight:bold">'+esc(name)+'</td>'+
+      '<td style="border:1px solid #999;text-align:right;padding:4px 8px;color:#555">'+esc((roleBy[name]||[]).join(" · "))+'</td>'+
+      hs.map(x=>`<td style="border:1px solid #999;text-align:center;padding:4px 8px">${num(x)}</td>`).join("")+
+      `<td style="border:1px solid #999;text-align:center;padding:4px 8px">${num(tot)}</td>`+
+      `<td style="border:1px solid #999;text-align:center;padding:4px 8px">${gm?num(gm):""}</td>`+
+      `<td style="border:1px solid #999;text-align:center;padding:4px 8px;font-weight:bold;background:#f4f8ff">${num(tot+gm)}</td></tr>`;
+  }
+  h2+='</table>';
+
+  const html='<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">'+
+    '<style>body{font-family:Arial,"Segoe UI",sans-serif;direction:rtl}h3{margin:14px 0 6px}td,th{font-size:13px}</style></head>'+
+    '<body dir="rtl"><h3>📅 סדין — מערכת שעות שבועית</h3>'+h1+
+    '<h3 style="margin-top:22px">👨‍🏫 סיכום ש"ש לכל עובד הוראה</h3>'+h2+'</body></html>';
+  download("סדין-"+new Date().toISOString().slice(0,10)+".xls","﻿"+html,"application/vnd.ms-excel;charset=utf-8");
 }
 
 /* עדכוני תכנון */
