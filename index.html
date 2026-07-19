@@ -178,7 +178,12 @@
   .pl-drag{cursor:grab;color:#94a3b8;font-size:16px;user-select:none;padding:0 4px}
   .pl-drag:active{cursor:grabbing}
   #planbudget input[type="checkbox"]{width:13px;height:13px;padding:0;margin:0;flex:none}
-  #planbudget .pl-grp-head .btn{height:28px;box-sizing:border-box;display:inline-flex;align-items:center}
+  /* אחידות מוחלטת של פקדי כותרת קבוצה: ש"ש, + עובד, מחיקת קבוצה */
+  #planbudget .pl-grp-head .btn,
+  #planbudget .pl-grp-head .seg.pl-grp-ctl{
+    height:30px;box-sizing:border-box;display:inline-flex;align-items:center;gap:5px;
+    padding:0 12px;font-size:13px;font-weight:600;border-radius:10px;margin:0;line-height:1
+  }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -1934,7 +1939,7 @@ function renderPlSalary(t){
         <input value="${esc(g.name)}" onchange="plUpdGroup('${g.id}','name',this.value)">
         <span class="pl-grp-sum">סה"כ: <b>${ils(gt)}</b>${(showWh&&whTotal>0)?` · סה"כ ש"ש: <b>${+whTotal.toFixed(2)}</b>`:""}</span>
         <span style="flex:1"></span>
-        <label class="seg noprint" style="padding:0 10px;height:28px;box-sizing:border-box;font-size:13px;border-radius:10px;gap:5px;font-weight:600;align-items:center" title="הצג עמודת ש"ש (בדרך כלל לצוות הוראה)"><input type="checkbox" ${showWh?"checked":""} onchange="plUpdGroup('${g.id}','teaching',this.checked)"> ש"ש</label>
+        <label class="seg noprint pl-grp-ctl" title="הצג עמודת ש"ש (בדרך כלל לצוות הוראה)"><input type="checkbox" ${showWh?"checked":""} onchange="plUpdGroup('${g.id}','teaching',this.checked)"> ש"ש</label>
         <button class="btn sec mini noprint" onclick="plAddEmp('${g.id}')">+ עובד</button>
         <button class="btn danger noprint" onclick="plDelGroup('${g.id}')">מחיקת קבוצה</button>
       </div>
@@ -1990,15 +1995,15 @@ function renderPlSadin(){
   const sd=state.plan.sadin, cls=sd.classes;
   // רשימת מורים להשלמה אוטומטית — מקבוצות ההוראה בגיליון השכר
   const teachers=[...new Set(state.plan.salGroups.filter(g=>g.teaching).flatMap(g=>g.emps.map(e=>(e.name||"").trim())).filter(n=>n && !n.startsWith("חדש")))].sort();
-  const head=`<tr><th style="min-width:140px">מקצוע</th>${cls.map((c,i)=>`<th colspan="2" style="text-align:center;white-space:nowrap" ondragover="sdColDragOver(event)" ondragleave="sdColDragLeave(event)" ondrop="sdColDrop(event,${i})"><span class="pl-drag noprint" draggable="true" ondragstart="sdColDragStart(event,${i})" ondragend="sdColDragEnd(event)" title="גרור להזזת הכיתה">⠿</span><input class="pl-mini" style="width:60px;text-align:center;font-weight:700" value="${esc(c)}" onchange="sdUpdClass(${i},this.value)"><button class="btn danger noprint" style="padding:1px 6px;font-size:11px;margin-inline-start:4px" onclick="sdDelClass(${i})" title="מחיקת כיתה">✕</button></th>`).join("")}<th>הערות</th><th class="noprint"></th></tr>
-  <tr><th></th>${cls.map(()=>'<th style="font-weight:400">שעות</th><th style="font-weight:400">מורה</th>').join("")}<th></th><th class="noprint"></th></tr>`;
-  const rows=sd.rows.map(r=>`<tr>
-    <td><input class="pl-name" style="width:140px" value="${esc(r.subject)}" onchange="sdUpdRow('${r.id}','subject',this.value)"></td>
-    ${r.cells.map((c,i)=>`<td class="num"><input class="pl-mini" style="width:46px" type="number" step="any" value="${Number(c.h)||0}" onchange="sdUpdCell('${r.id}',${i},'h',this.value)"></td>
-      <td><input class="pl-mini" style="width:104px;text-align:right;direction:rtl" list="plTeacherList" value="${esc(c.t||"")}" placeholder="—" onchange="sdUpdCell('${r.id}',${i},'t',this.value)"></td>`).join("")}
+  const head=`<tr data-sdrow="h1"><th style="min-width:140px">מקצוע</th>${cls.map((c,i)=>`<th colspan="2" data-col="${i}" style="text-align:center;white-space:nowrap" ondragover="sdColDragOver(event)" ondrop="sdColDrop(event)"><span class="pl-drag noprint" draggable="true" ondragstart="sdColDragStart(event,${i})" ondragend="sdColDragEnd(event)" title="גרור להזזת הכיתה">⠿</span><input class="pl-mini" style="width:60px;text-align:center;font-weight:700" value="${esc(c)}" onchange="sdUpdClass(${i},this.value)"><button class="btn danger noprint" style="padding:1px 6px;font-size:11px;margin-inline-start:4px" onclick="sdDelClass(${i})" title="מחיקת כיתה">✕</button></th>`).join("")}<th>הערות</th><th class="noprint"></th></tr>
+  <tr><th></th>${cls.map((c,i)=>`<th data-col="${i}" style="font-weight:400">שעות</th><th data-col="${i}" style="font-weight:400">מורה</th>`).join("")}<th></th><th class="noprint"></th></tr>`;
+  const rows=sd.rows.map(r=>`<tr data-rid="${r.id}" ondragover="sdRowDragOver(event)" ondrop="sdRowDrop(event)">
+    <td style="white-space:nowrap"><span class="pl-drag noprint" draggable="true" ondragstart="sdRowDragStart(event,'${r.id}')" ondragend="sdRowDragEnd(event)" title="גרור לשינוי סדר">⠿</span><input class="pl-name" style="width:118px" value="${esc(r.subject)}" onchange="sdUpdRow('${r.id}','subject',this.value)"></td>
+    ${r.cells.map((c,i)=>`<td class="num" data-col="${i}"><input class="pl-mini" style="width:46px" type="number" step="any" value="${Number(c.h)||0}" onchange="sdUpdCell('${r.id}',${i},'h',this.value)"></td>
+      <td data-col="${i}"><input class="pl-mini" style="width:104px;text-align:right;direction:rtl" list="plTeacherList" value="${esc(c.t||"")}" placeholder="—" onchange="sdUpdCell('${r.id}',${i},'t',this.value)"></td>`).join("")}
     <td><input class="pl-note" style="width:150px" value="${esc(r.note||"")}" onchange="sdUpdRow('${r.id}','note',this.value)"></td>
     <td class="noprint"><button class="btn danger" onclick="sdDelRow('${r.id}')">מחק</button></td></tr>`).join("");
-  const totals=`<tr class="grand"><td>סה"כ שעות</td>${cls.map((c,i)=>`<td class="num">${+sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0).toFixed(2)}</td><td></td>`).join("")}<td></td><td class="noprint"></td></tr>`;
+  const totals=`<tr class="grand"><td>סה"כ שעות</td>${cls.map((c,i)=>`<td class="num" data-col="${i}">${+sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0).toFixed(2)}</td><td data-col="${i}"></td>`).join("")}<td></td><td class="noprint"></td></tr>`;
 
   // סיכום למורה (SUMIF): שעות בכל כיתה + סה"כ + השוואה ל-ש"ש בגיליון השכר
   const sum={};
@@ -2058,20 +2063,78 @@ function sdUpdCell(id,ci,field,val){
 function sdAddRow(){ state.plan.sadin.rows.push({id:uid(), subject:"", cells:state.plan.sadin.classes.map(()=>({h:0,t:""})), note:""}); save(); renderPlanBudget(); }
 function sdDelRow(id){ if(!confirm("למחוק את המקצוע?")) return; state.plan.sadin.rows=state.plan.sadin.rows.filter(x=>x.id!==id); save(); renderPlanBudget(); }
 function sdUpdClass(i,val){ val=val.trim(); if(val) state.plan.sadin.classes[i]=val; save(); renderPlanBudget(); }
-/* גרירת עמודות כיתה — מעביר את הכיתה עם כל השעות והשיבוצים שלה */
-let _sdColDrag=null;
-function sdColDragStart(e,i){ _sdColDrag=i; e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",String(i));}catch(_){} }
-function sdColDragOver(e){ if(_sdColDrag==null) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; e.currentTarget.style.background="#eef3fa"; }
-function sdColDragLeave(e){ e.currentTarget.style.background=""; }
-function sdColDragEnd(e){ _sdColDrag=null; }
-function sdColDrop(e,ti){
-  e.preventDefault(); e.currentTarget.style.background="";
-  const fi=_sdColDrag; _sdColDrag=null;
-  if(fi==null || fi===ti) return;
+/* גרירה חיה בסדין — שורות מקצוע ועמודות כיתה זזות עם העכבר ומתמקמות תוך כדי */
+function sdApplyColOrder(order){ // order = אינדקסים מקוריים בסדר החדש
   const sd=state.plan.sadin;
-  const c=sd.classes.splice(fi,1)[0]; sd.classes.splice(ti,0,c);
-  sd.rows.forEach(r=>{ const cell=r.cells.splice(fi,1)[0]; r.cells.splice(ti,0,cell); });
-  save(); renderPlanBudget(); toast("סדר הכיתות עודכן");
+  if(!order || order.length!==sd.classes.length) return false;
+  sd.classes=order.map(i=>sd.classes[i]);
+  sd.rows.forEach(r=>{ r.cells=order.map(i=>r.cells[i]); });
+  return true;
+}
+function sdApplyRowOrder(ids){
+  const sd=state.plan.sadin;
+  if(!ids || ids.length!==sd.rows.length || !sd.rows.every(r=>ids.includes(r.id))) return false;
+  sd.rows.sort((a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id));
+  return true;
+}
+/* עמודות */
+let _sdColCi=null;
+function sdColDragStart(e,i){ _sdColCi=i; e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",String(i));}catch(_){} }
+function sdColDragOver(e){
+  if(_sdColCi==null) return;
+  const th=e.currentTarget, tj=+th.dataset.col;
+  e.preventDefault(); e.dataTransfer.dropEffect="move";
+  if(isNaN(tj) || tj===_sdColCi) return;
+  const rect=th.getBoundingClientRect();
+  const placeAfter=(e.clientX < rect.left+rect.width/2); // RTL: חצי שמאלי = אחרי בסדר ה-DOM
+  const tbl=th.closest("table"); if(!tbl) return;
+  [...tbl.rows].forEach(row=>{
+    const drag=[...row.cells].filter(c=>+c.dataset.col===_sdColCi);
+    const tgt=[...row.cells].filter(c=>+c.dataset.col===tj);
+    if(!drag.length || !tgt.length) return;
+    const ref=placeAfter ? tgt[tgt.length-1].nextSibling : tgt[0];
+    drag.forEach(c=>row.insertBefore(c,ref));
+  });
+}
+function sdColDrop(e){ e.preventDefault(); sdColCommit(e.currentTarget); }
+function sdColDragEnd(e){ sdColCommit(e.currentTarget); }
+function sdColCommit(el){
+  if(_sdColCi==null) return;
+  _sdColCi=null;
+  const tbl=el && el.closest ? el.closest("table") : null;
+  if(tbl){
+    const order=[...tbl.querySelectorAll('tr[data-sdrow="h1"] th[data-col]')].map(th=>+th.dataset.col);
+    if(order.length && sdApplyColOrder(order)){ save(); toast("סדר הכיתות עודכן"); }
+  }
+  renderPlanBudget();
+}
+/* שורות מקצוע */
+let _sdRowEl=null;
+function sdRowDragStart(e,rid){
+  _sdRowEl=e.currentTarget.closest("tr");
+  if(_sdRowEl) _sdRowEl.style.opacity=".45";
+  e.dataTransfer.effectAllowed="move";
+  try{ e.dataTransfer.setData("text/plain",rid); }catch(_){}
+}
+function sdRowDragOver(e){
+  if(!_sdRowEl) return;
+  const tr=e.currentTarget;
+  if(!tr.dataset.rid) return;
+  e.preventDefault(); e.dataTransfer.dropEffect="move";
+  if(tr===_sdRowEl) return;
+  const rect=tr.getBoundingClientRect();
+  const after=(e.clientY-rect.top) > rect.height/2;
+  tr.parentNode.insertBefore(_sdRowEl, after ? tr.nextSibling : tr);
+}
+function sdRowDrop(e){ e.preventDefault(); sdRowCommit(); }
+function sdRowDragEnd(e){ sdRowCommit(); }
+function sdRowCommit(){
+  if(!_sdRowEl) return;
+  const el=_sdRowEl; _sdRowEl=null;
+  el.style.opacity="";
+  const ids=[...el.parentNode.querySelectorAll("tr[data-rid]")].map(tr=>tr.dataset.rid);
+  if(sdApplyRowOrder(ids)){ save(); toast("הסדר עודכן"); }
+  renderPlanBudget();
 }
 function sdUpdGmul(name,val){
   const v=Number(val)||0;
