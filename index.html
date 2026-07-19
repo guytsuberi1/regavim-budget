@@ -2029,6 +2029,12 @@ function renderPlSadin(){
       <td class="num"><input class="pl-mini" style="width:56px" type="number" step="any" value="${gmul||""}" placeholder="0" data-name="${esc(name)}" onchange="sdUpdGmul(this.dataset.name,this.value)"></td>
       <td class="num"><b>${totAll}</b></td></tr>`;
   }).join("");
+  // שורת סיכום בראש טבלת המורים
+  const sumNames=Object.keys(sum);
+  const colTot=cls.map((c,i)=>+sumNames.reduce((s,t)=>s+sum[t][i],0).toFixed(2));
+  const sumInSadin=+colTot.reduce((a,b)=>a+b,0).toFixed(2);
+  const gmulTot=+sumNames.reduce((s,t)=>s+(Number(sd.gmul[t])||0),0).toFixed(2);
+  const sumTotalsRow=sumNames.length?`<tr class="grand"><td>סה"כ</td><td></td>${colTot.map(v=>`<td class="num">${v}</td>`).join("")}<td class="num">${sumInSadin}</td><td class="num">${gmulTot||""}</td><td class="num">${+(sumInSadin+gmulTot).toFixed(2)}</td></tr>`:"";
 
   host.innerHTML=`
   <div class="card">
@@ -2050,7 +2056,7 @@ function renderPlSadin(){
     <p class="hint">מחושב אוטומטית מהסדין. "סה"כ כולל גמול" = סה"כ השעות בסדין + גמול בגרות.</p>
     <div class="scroll"><table style="max-width:900px">
       <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th></tr></thead>
-      <tbody>${sumRows||`<tr><td colspan="${cls.length+5}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
+      <tbody>${sumTotalsRow}${sumRows||`<tr><td colspan="${cls.length+5}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
     </table></div>
   </div>`;
 }
@@ -2190,6 +2196,18 @@ function sdExportXls(){
   const ordered=Object.entries(sum).sort((a,b)=>b[1].reduce((x,y)=>x+y,0)-a[1].reduce((x,y)=>x+y,0));
   let h2='<table dir="rtl" style="border-collapse:collapse"><tr>'+
     ['מורה','תפקיד',...cls,'סה"כ בסדין','גמול בגרות','סה"כ כולל גמול'].map(x=>`<th style="border:1px solid #666;background:#e3ecfb;padding:5px 9px;font-weight:bold">${esc(x)}</th>`).join("")+'</tr>';
+  // שורת סיכום בראש
+  if(ordered.length){
+    const names=ordered.map(o=>o[0]);
+    const colT=cls.map((c,i)=>+names.reduce((s,t)=>s+sum[t][i],0).toFixed(2));
+    const inSadin=+colT.reduce((a,b)=>a+b,0).toFixed(2);
+    const gmulT=+names.reduce((s,t)=>s+(Number(sd.gmul[t])||0),0).toFixed(2);
+    h2+='<tr style="background:#e8f0e8;font-weight:bold"><td style="border:1px solid #666;text-align:right;padding:4px 8px">סה"כ</td><td style="border:1px solid #666"></td>'+
+      colT.map(v=>`<td style="border:1px solid #666;text-align:center;padding:4px 8px">${num(v)}</td>`).join("")+
+      `<td style="border:1px solid #666;text-align:center;padding:4px 8px">${num(inSadin)}</td>`+
+      `<td style="border:1px solid #666;text-align:center;padding:4px 8px">${gmulT?num(gmulT):""}</td>`+
+      `<td style="border:1px solid #666;text-align:center;padding:4px 8px">${num(inSadin+gmulT)}</td></tr>`;
+  }
   for(const [name,hs] of ordered){
     const tot=+hs.reduce((a,b)=>a+b,0).toFixed(2), gm=Number(sd.gmul[name])||0;
     h2+='<tr><td style="border:1px solid #999;text-align:right;padding:4px 8px;font-weight:bold">'+esc(name)+'</td>'+
