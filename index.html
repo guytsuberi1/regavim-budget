@@ -1774,7 +1774,7 @@ function plImportPlan(input){
 let plView="general";
 const PL_CALC_LABELS={monthly:"חודשי", wh:"לפי ש\"ש", hourly:"שעתי", fixed:"סכום קבוע"};
 /* גישה לגיליון התכנון — רק למשתמשים שברשימה (לפי אימייל ההתחברות) */
-const PLAN_ALLOWED_EMAILS=["guy@rgvb.org.il","guytsuberi1@gmail.com"];
+const PLAN_ALLOWED_EMAILS=["guy@rgvb.org.il","guytsuberi1@gmail.com","dovsamuel2@gmail.com"];
 function plCanView(){
   return typeof _userEmail!=="undefined" && !!_userEmail && PLAN_ALLOWED_EMAILS.includes(_userEmail.toLowerCase().trim());
 }
