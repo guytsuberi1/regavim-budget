@@ -1841,9 +1841,12 @@ function renderPlanBudget(){
 
 function plRowsHtml(list){
   const t=planTotals();
+  const handle=`<td class="noprint" style="width:24px;text-align:center"><span class="pl-drag" draggable="true" ondragstart="plRowDragStart(event,'${list}','__ID__')" ondragend="plRowDragEnd(event)" title="גרור לשינוי סדר">⠿</span></td>`;
   return state.plan[list].map(r=>{
+    const H=handle.replace("__ID__",r.id);
+    const rowOpen=`<tr data-list="${list}" data-id="${r.id}" ondragover="plRowDragOver(event)" ondrop="plRowDrop(event)">`;
     if(r.salary){
-      return `<tr class="pl-locked"><td>🔗 ${esc(r.name)}</td>
+      return `${rowOpen}${H}<td>🔗 ${esc(r.name)}</td>
         <td class="num"><b>${ils(t.sal)}</b></td>
         ${list==="expenses"?'<td><span class="hint" style="margin:0">—</span></td>':""}
         <td><span class="hint" style="margin:0">מחושב אוטומטית מגיליון השכר</span> <button class="btn mini sec noprint" onclick="plSwitchView('salary')">לגיליון השכר ←</button></td>
@@ -1856,7 +1859,7 @@ function plRowsHtml(list){
            ${mainOrder().map(m=>`<option value="${esc(m)}" ${r.link===m?"selected":""}>${esc(m)}</option>`).join("")}
          </select></td>`
       : "";
-    return `<tr><td><input class="pl-name" value="${esc(r.name)}" onchange="plUpdRow('${list}','${r.id}','name',this.value)"></td>
+    return `${rowOpen}${H}<td><input class="pl-name" value="${esc(r.name)}" onchange="plUpdRow('${list}','${r.id}','name',this.value)"></td>
       <td class="num"><input class="pl-num" type="number" step="any" value="${amt}" onchange="plUpdRow('${list}','${r.id}','amount',this.value)"></td>
       ${linkCell}
       <td><input class="pl-note" value="${esc(r.note||"")}" onchange="plUpdRow('${list}','${r.id}','note',this.value)"></td>
@@ -1872,9 +1875,9 @@ function renderPlGeneral(t){
       <button class="btn sec mini noprint" onclick="plExportGeneralCsv()" title="ייצוא ל-CSV (Excel)" style="font-size:18px;padding:6px 10px">⬇️</button>
     </div>
     <div class="scroll"><table>
-      <thead><tr><th>סעיף</th><th>סכום</th><th>הערה</th><th class="noprint"></th></tr></thead>
+      <thead><tr><th class="noprint"></th><th>סעיף</th><th>סכום</th><th>הערה</th><th class="noprint"></th></tr></thead>
       <tbody>${plRowsHtml("incomes")}
-      <tr class="grand"><td>סה"כ הכנסות</td><td class="num">${ils(t.inc)}</td><td></td><td class="noprint"></td></tr></tbody>
+      <tr class="grand"><td class="noprint"></td><td>סה"כ הכנסות</td><td class="num">${ils(t.inc)}</td><td></td><td class="noprint"></td></tr></tbody>
     </table></div>
     <div class="btnbar noprint"><button class="btn sec" onclick="plAddRow('incomes')">+ שורת הכנסה</button></div>
   </div>
@@ -1882,10 +1885,10 @@ function renderPlGeneral(t){
     <h2>🧾 הוצאות</h2>
     <p class="hint">"מקושר לדשבורד" = הסכום המתוכנן כאן קובע את התקציב השנתי של הקטגוריה במסך "תקציב מול ביצוע".</p>
     <div class="scroll"><table>
-      <thead><tr><th>סעיף</th><th>סכום</th><th>מקושר לדשבורד</th><th>הערה</th><th class="noprint"></th></tr></thead>
+      <thead><tr><th class="noprint"></th><th>סעיף</th><th>סכום</th><th>מקושר לדשבורד</th><th>הערה</th><th class="noprint"></th></tr></thead>
       <tbody>${plRowsHtml("expenses")}
-      <tr class="grand"><td>סה"כ הוצאות</td><td class="num">${ils(t.exp)}</td><td></td><td></td><td class="noprint"></td></tr>
-      <tr class="grand"><td>מאזן</td><td class="num" style="color:${t.bal<0?"var(--red)":"var(--green)"}">${ils(t.bal)}</td><td></td><td></td><td class="noprint"></td></tr></tbody>
+      <tr class="grand"><td class="noprint"></td><td>סה"כ הוצאות</td><td class="num">${ils(t.exp)}</td><td></td><td></td><td class="noprint"></td></tr>
+      <tr class="grand"><td class="noprint"></td><td>מאזן</td><td class="num" style="color:${t.bal<0?"var(--red)":"var(--green)"}">${ils(t.bal)}</td><td></td><td></td><td class="noprint"></td></tr></tbody>
     </table></div>
     <div class="btnbar noprint"><button class="btn sec" onclick="plAddRow('expenses')">+ שורת הוצאה</button></div>
   </div>
@@ -2224,6 +2227,39 @@ function sdExportXls(){
     '<body dir="rtl"><h3>📅 סדין — מערכת שעות שבועית</h3>'+h1+
     '<h3 style="margin-top:22px">👨‍🏫 סיכום ש"ש לכל עובד הוראה</h3>'+h2+'</body></html>';
   download("סדין-"+new Date().toISOString().slice(0,10)+".xls","﻿"+html,"application/vnd.ms-excel;charset=utf-8");
+}
+
+/* גרירה חיה לשורות בתכנון הכללי (הכנסות/הוצאות) — בתוך אותה טבלה */
+let _plRowEl=null, _plRowList=null;
+function plRowDragStart(e,list,id){
+  _plRowList=list; _plRowEl=e.currentTarget.closest("tr");
+  if(_plRowEl) _plRowEl.style.opacity=".45";
+  e.dataTransfer.effectAllowed="move";
+  try{ e.dataTransfer.setData("text/plain",id); }catch(_){}
+}
+function plRowDragOver(e){
+  if(!_plRowEl) return;
+  const tr=e.currentTarget;
+  if(tr.dataset.list!==_plRowList || !tr.dataset.id) return; // רק בתוך אותה רשימה
+  e.preventDefault(); e.dataTransfer.dropEffect="move";
+  if(tr===_plRowEl) return;
+  const rect=tr.getBoundingClientRect();
+  const after=(e.clientY-rect.top) > rect.height/2;
+  tr.parentNode.insertBefore(_plRowEl, after ? tr.nextSibling : tr);
+}
+function plRowDrop(e){ e.preventDefault(); plRowCommit(); }
+function plRowDragEnd(e){ plRowCommit(); }
+function plRowCommit(){
+  if(!_plRowEl) return;
+  const el=_plRowEl; _plRowEl=null; el.style.opacity="";
+  const list=_plRowList; _plRowList=null;
+  const arr=list && state.plan[list]; if(!arr){ renderPlanBudget(); return; }
+  const ids=[...el.parentNode.querySelectorAll("tr[data-id]")].map(tr=>tr.dataset.id);
+  if(ids.length!==arr.length || !arr.every(x=>ids.includes(x.id))){ renderPlanBudget(); return; }
+  const before=arr.map(x=>x.id).join("|");
+  arr.sort((a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id));
+  if(arr.map(x=>x.id).join("|")!==before){ save(); toast("הסדר עודכן"); }
+  renderPlanBudget();
 }
 
 /* עדכוני תכנון */
