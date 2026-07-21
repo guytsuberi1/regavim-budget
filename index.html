@@ -1689,8 +1689,16 @@ function plMigrateSadin(p){
   if(!p.sadin.gmul || typeof p.sadin.gmul!=="object") p.sadin.gmul={}; // גמול בגרות לכל מורה (לפי שם)
   p.sadin.rows.forEach(r=>{
     if(!r.id) r.id=uid();
-    if(!Array.isArray(r.cells)) r.cells=[];
-    while(r.cells.length<p.sadin.classes.length) r.cells.push({h:0,t:""});
+    if(!r.type) r.type=r.type==="role"?"role":"teach";
+    if(r.type==="role"){
+      if(typeof r.teacher!=="string") r.teacher="";
+      if(typeof r.hours!=="number") r.hours=Number(r.hours)||0;
+      delete r.cells;
+    } else {
+      r.type="teach";
+      if(!Array.isArray(r.cells)) r.cells=[];
+      while(r.cells.length<p.sadin.classes.length) r.cells.push({h:0,t:""});
+    }
   });
   return p;
 }
@@ -2003,44 +2011,68 @@ function renderPlSadin(){
   const teachers=[...new Set(state.plan.salGroups.filter(g=>g.teaching).flatMap(g=>g.emps.map(e=>(e.name||"").trim())).filter(n=>n && !n.startsWith("חדש")))].sort();
   const head=`<tr data-sdrow="h1"><th style="min-width:140px">מקצוע</th>${cls.map((c,i)=>`<th colspan="2" data-col="${i}" style="text-align:center;white-space:nowrap;background:${cbg(i)}" ondragover="sdColDragOver(event)" ondrop="sdColDrop(event)"><span class="pl-drag noprint" draggable="true" ondragstart="sdColDragStart(event,${i})" ondragend="sdColDragEnd(event)" title="גרור להזזת הכיתה">⠿</span><input class="pl-mini" style="width:60px;text-align:center;font-weight:700" value="${esc(c)}" onchange="sdUpdClass(${i},this.value)"><button class="btn danger noprint" style="padding:1px 6px;font-size:11px;margin-inline-start:4px" onclick="sdDelClass(${i})" title="מחיקת כיתה">✕</button></th>`).join("")}<th>הערות</th><th class="noprint"></th></tr>
   <tr><th></th>${cls.map((c,i)=>`<th data-col="${i}" style="font-weight:400;background:${cbg(i)}">שעות</th><th data-col="${i}" style="font-weight:400;background:${cbg(i)}">מורה</th>`).join("")}<th></th><th class="noprint"></th></tr>`;
-  const rows=sd.rows.map(r=>`<tr data-rid="${r.id}" ondragover="sdRowDragOver(event)" ondrop="sdRowDrop(event)">
+  const FULL=cls.length*2+3;
+  const isRole=r=>r.type==="role";
+  const teachRows=sd.rows.filter(r=>!isRole(r));
+  const roleRows=sd.rows.filter(r=>isRole(r));
+  const teachRowHtml=r=>`<tr data-rid="${r.id}" data-type="teach" ondragover="sdRowDragOver(event)" ondrop="sdRowDrop(event)">
     <td style="white-space:nowrap"><span class="pl-drag noprint" draggable="true" ondragstart="sdRowDragStart(event,'${r.id}')" ondragend="sdRowDragEnd(event)" title="גרור לשינוי סדר">⠿</span><input class="pl-name" style="width:118px" value="${esc(r.subject)}" onchange="sdUpdRow('${r.id}','subject',this.value)"></td>
-    ${r.cells.map((c,i)=>`<td class="num" data-col="${i}" style="background:${cbg(i)}"><input class="pl-mini" style="width:46px" type="number" step="any" value="${Number(c.h)||0}" onchange="sdUpdCell('${r.id}',${i},'h',this.value)"></td>
+    ${(r.cells||[]).map((c,i)=>`<td class="num" data-col="${i}" style="background:${cbg(i)}"><input class="pl-mini" style="width:46px" type="number" step="any" value="${Number(c.h)||0}" onchange="sdUpdCell('${r.id}',${i},'h',this.value)"></td>
       <td data-col="${i}" style="background:${cbg(i)}"><input class="pl-mini" style="width:104px;text-align:right;direction:rtl" list="plTeacherList" value="${esc(c.t||"")}" placeholder="—" onchange="sdUpdCell('${r.id}',${i},'t',this.value)"></td>`).join("")}
     <td><input class="pl-note" style="width:150px" value="${esc(r.note||"")}" onchange="sdUpdRow('${r.id}','note',this.value)"></td>
-    <td class="noprint"><button class="btn danger" onclick="sdDelRow('${r.id}')">מחק</button></td></tr>`).join("");
-  const totals=`<tr class="grand"><td>סה"כ שעות</td>${cls.map((c,i)=>`<td class="num" data-col="${i}">${+sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0).toFixed(2)}</td><td data-col="${i}"></td>`).join("")}<td></td><td class="noprint"></td></tr>`;
+    <td class="noprint"><button class="btn danger" onclick="sdDelRow('${r.id}')">מחק</button></td></tr>`;
+  const roleSpacer=cls.length>=2?`<td colspan="${cls.length*2-2}"></td>`:"";
+  const roleRowHtml=r=>`<tr data-rid="${r.id}" data-type="role" ondragover="sdRowDragOver(event)" ondrop="sdRowDrop(event)">
+    <td style="white-space:nowrap"><span class="pl-drag noprint" draggable="true" ondragstart="sdRowDragStart(event,'${r.id}')" ondragend="sdRowDragEnd(event)" title="גרור לשינוי סדר">⠿</span><input class="pl-name" style="width:118px" value="${esc(r.subject)}" placeholder="שם התפקיד" onchange="sdUpdRole('${r.id}','subject',this.value)"></td>
+    <td style="background:#f6f2e9"><input class="pl-mini" style="width:110px;text-align:right;direction:rtl" list="plTeacherList" value="${esc(r.teacher||"")}" placeholder="מורה" onchange="sdUpdRole('${r.id}','teacher',this.value)"></td>
+    <td class="num" style="background:#f6f2e9"><input class="pl-mini" style="width:52px" type="number" step="any" value="${Number(r.hours)||0}" title="שעות" onchange="sdUpdRole('${r.id}','hours',this.value)"></td>
+    ${roleSpacer}
+    <td><input class="pl-note" style="width:150px" value="${esc(r.note||"")}" onchange="sdUpdRole('${r.id}','note',this.value)"></td>
+    <td class="noprint"><button class="btn danger" onclick="sdDelRow('${r.id}')">מחק</button></td></tr>`;
+  const divider=txt=>`<tr><td colspan="${FULL}" style="background:#eef3fa;color:var(--teal-d);font-weight:700;text-align:right;padding:6px 10px">${txt}</td></tr>`;
+  const teachTotals=`<tr class="grand"><td>סה"כ שעות הוראה</td>${cls.map((c,i)=>`<td class="num" data-col="${i}">${+teachRows.reduce((s,r)=>s+(Number(r.cells&&r.cells[i]&&r.cells[i].h)||0),0).toFixed(2)}</td><td data-col="${i}"></td>`).join("")}<td></td><td class="noprint"></td></tr>`;
+  const roleHoursTotal=+roleRows.reduce((s,r)=>s+(Number(r.hours)||0),0).toFixed(2);
+  const roleTotals=`<tr class="grand"><td colspan="2">סה"כ שעות אחריות</td><td class="num">${roleHoursTotal}</td><td colspan="${cls.length*2}"></td></tr>`;
+  const bodyRows=divider("▸ שעות הוראה")
+    +(teachRows.map(teachRowHtml).join("")||`<tr><td colspan="${FULL}" style="text-align:center;color:var(--muted)">אין מקצועות — לחץ "+ מקצוע הוראה"</td></tr>`)
+    +teachTotals
+    +divider('▸ שעות ש"ש על אחריות (ניהול, ריכוז וכו\')')
+    +(roleRows.map(roleRowHtml).join("")||`<tr><td colspan="${FULL}" style="text-align:center;color:var(--muted)">אין אחריות — לחץ "+ אחריות"</td></tr>`)
+    +roleTotals;
 
-  // סיכום למורה (SUMIF): שעות בכל כיתה + סה"כ + השוואה ל-ש"ש בגיליון השכר
+  // ===== סיכום למורה: שעות הוראה (לפי כיתה) + שעות אחריות → סה"כ ממוזג =====
   const sum={};
-  sd.rows.forEach(r=>r.cells.forEach((c,i)=>{
+  teachRows.forEach(r=>(r.cells||[]).forEach((c,i)=>{
     const t=(c.t||"").trim(); if(!t || t==="-") return;
     if(!sum[t]) sum[t]=Array(cls.length).fill(0);
     sum[t][i]+=Number(c.h)||0;
   }));
+  const roleH={};
+  roleRows.forEach(r=>{ const t=(r.teacher||"").trim(); if(!t||t==="-")return; roleH[t]=(roleH[t]||0)+(Number(r.hours)||0); });
   const roleByName={};
   state.plan.salGroups.filter(g=>g.teaching).forEach(g=>g.emps.forEach(e=>{
     const n=(e.name||"").trim(); if(!n) return;
     const role=(e.role||"").trim();
     if(role){ if(!roleByName[n]) roleByName[n]=[]; if(!roleByName[n].includes(role)) roleByName[n].push(role); }
   }));
-  const sumRows=Object.entries(sum).sort((a,b)=>b[1].reduce((x,y)=>x+y,0)-a[1].reduce((x,y)=>x+y,0)).map(([name,hs])=>{
-    const tot=+hs.reduce((a,b)=>a+b,0).toFixed(2);
+  const allNames=[...new Set([...Object.keys(sum),...Object.keys(roleH)])];
+  const rowsData=allNames.map(name=>{
+    const hs=sum[name]||Array(cls.length).fill(0);
+    const teachTot=+hs.reduce((a,b)=>a+b,0).toFixed(2);
+    const sadinTot=+(teachTot+(roleH[name]||0)).toFixed(2);
     const gmul=Number(sd.gmul[name])||0;
-    const totAll=+(tot+gmul).toFixed(2);
-    return `<tr><td>${esc(name)}</td>
-      <td style="font-size:12px;color:#475569">${esc((roleByName[name]||[]).join(" · ")||"—")}</td>
-      ${hs.map(h=>`<td class="num">${+(+h).toFixed(2)}</td>`).join("")}
-      <td class="num">${tot}</td>
-      <td class="num"><input class="pl-mini" style="width:56px" type="number" step="any" value="${gmul||""}" placeholder="0" data-name="${esc(name)}" onchange="sdUpdGmul(this.dataset.name,this.value)"></td>
-      <td class="num"><b>${totAll}</b></td></tr>`;
-  }).join("");
-  // שורת סיכום בראש טבלת המורים
-  const sumNames=Object.keys(sum);
-  const colTot=cls.map((c,i)=>+sumNames.reduce((s,t)=>s+sum[t][i],0).toFixed(2));
-  const sumInSadin=+colTot.reduce((a,b)=>a+b,0).toFixed(2);
-  const gmulTot=+sumNames.reduce((s,t)=>s+(Number(sd.gmul[t])||0),0).toFixed(2);
-  const sumTotalsRow=sumNames.length?`<tr class="grand"><td>סה"כ</td><td></td>${colTot.map(v=>`<td class="num">${v}</td>`).join("")}<td class="num">${sumInSadin}</td><td class="num">${gmulTot||""}</td><td class="num">${+(sumInSadin+gmulTot).toFixed(2)}</td></tr>`:"";
+    return {name,hs,sadinTot,gmul,totAll:+(sadinTot+gmul).toFixed(2)};
+  }).sort((a,b)=>b.sadinTot-a.sadinTot);
+  const sumRows=rowsData.map(d=>`<tr><td>${esc(d.name)}</td>
+      <td style="font-size:12px;color:#475569">${esc((roleByName[d.name]||[]).join(" · ")||"—")}</td>
+      ${d.hs.map(h=>`<td class="num">${+(+h).toFixed(2)}</td>`).join("")}
+      <td class="num">${d.sadinTot}</td>
+      <td class="num"><input class="pl-mini" style="width:56px" type="number" step="any" value="${d.gmul||""}" placeholder="0" data-name="${esc(d.name)}" onchange="sdUpdGmul(this.dataset.name,this.value)"></td>
+      <td class="num"><b>${d.totAll}</b></td></tr>`).join("");
+  const colTot=cls.map((c,i)=>+rowsData.reduce((s,d)=>s+d.hs[i],0).toFixed(2));
+  const sumInSadin=+rowsData.reduce((s,d)=>s+d.sadinTot,0).toFixed(2);
+  const gmulTot=+rowsData.reduce((s,d)=>s+d.gmul,0).toFixed(2);
+  const sumTotalsRow=rowsData.length?`<tr class="grand"><td>סה"כ</td><td></td>${colTot.map(v=>`<td class="num">${v}</td>`).join("")}<td class="num">${sumInSadin}</td><td class="num">${gmulTot||""}</td><td class="num">${+(sumInSadin+gmulTot).toFixed(2)}</td></tr>`:"";
 
   host.innerHTML=`
   <div class="card">
@@ -2048,18 +2080,19 @@ function renderPlSadin(){
       <h2 style="margin:0">📅 סדין — מערכת שעות שבועית</h2>
       <button class="btn sec mini noprint" onclick="sdExportXls()" title="ייצוא לאקסל (טבלה מעוצבת + סיכום)" style="font-size:18px;padding:6px 10px">⬇️</button>
     </div>
-    <p class="hint">שעות ומורה לכל מקצוע בכל כיתה. סיכום המורים למטה מתעדכן אוטומטית מהסדין ומושווה ל-ש"ש שבגיליון השכר.</p>
+    <p class="hint">חלק עליון — שעות הוראה לכל מקצוע בכל כיתה. חלק תחתון — שעות ש"ש על אחריות (ניהול/ריכוז). הסיכום למטה מאחד את שניהם לכל מורה.</p>
     <div class="scroll"><table>
       <thead>${head}</thead>
-      <tbody>${rows||`<tr><td colspan="${cls.length*2+3}" style="text-align:center;color:var(--muted)">אין מקצועות — לחץ "+ מקצוע" או ייבא את קובץ הסדין דרך "📥 ייבוא נתונים"</td></tr>`}${totals}</tbody>
+      <tbody>${bodyRows}</tbody>
     </table></div>
-    <div class="btnbar noprint"><button class="btn sec" onclick="sdAddRow()">+ מקצוע</button>
+    <div class="btnbar noprint"><button class="btn sec" onclick="sdAddRow()">+ מקצוע הוראה</button>
+      <button class="btn sec" onclick="sdAddRole()">+ אחריות</button>
       <button class="btn sec" onclick="sdAddClass()">+ כיתה</button></div>
   </div>
   <datalist id="plTeacherList">${teachers.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
   <div class="card">
     <h2>👨‍🏫 סיכום ש"ש לכל עובד הוראה</h2>
-    <p class="hint">מחושב אוטומטית מהסדין. "סה"כ כולל גמול" = סה"כ השעות בסדין + גמול בגרות.</p>
+    <p class="hint">מחושב אוטומטית מהסדין. "סה"כ בסדין" מאחד שעות הוראה + שעות אחריות. "סה"כ כולל גמול" מוסיף גם את גמול הבגרות.</p>
     <div class="scroll"><table style="max-width:900px">
       <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th></tr></thead>
       <tbody>${sumTotalsRow}${sumRows||`<tr><td colspan="${cls.length+5}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
@@ -2068,19 +2101,25 @@ function renderPlSadin(){
 }
 function sdUpdRow(id,field,val){ const r=state.plan.sadin.rows.find(x=>x.id===id); if(!r) return; r[field]=val.trim(); save(); renderPlanBudget(); }
 function sdUpdCell(id,ci,field,val){
-  const r=state.plan.sadin.rows.find(x=>x.id===id); const c=r && r.cells[ci]; if(!c) return;
+  const r=state.plan.sadin.rows.find(x=>x.id===id); const c=r && r.cells && r.cells[ci]; if(!c) return;
   if(field==="h") c.h=Number(val)||0; else c.t=val.trim();
   save(); renderPlanBudget();
 }
-function sdAddRow(){ state.plan.sadin.rows.push({id:uid(), subject:"", cells:state.plan.sadin.classes.map(()=>({h:0,t:""})), note:""}); save(); renderPlanBudget(); }
-function sdDelRow(id){ if(!confirm("למחוק את המקצוע?")) return; state.plan.sadin.rows=state.plan.sadin.rows.filter(x=>x.id!==id); save(); renderPlanBudget(); }
+function sdUpdRole(id,field,val){
+  const r=state.plan.sadin.rows.find(x=>x.id===id); if(!r) return;
+  if(field==="hours") r.hours=Number(val)||0; else r[field]=val.trim();
+  save(); renderPlanBudget();
+}
+function sdAddRow(){ state.plan.sadin.rows.push({id:uid(), type:"teach", subject:"", cells:state.plan.sadin.classes.map(()=>({h:0,t:""})), note:""}); save(); renderPlanBudget(); }
+function sdAddRole(){ state.plan.sadin.rows.push({id:uid(), type:"role", subject:"", teacher:"", hours:0, note:""}); save(); renderPlanBudget(); }
+function sdDelRow(id){ const r=state.plan.sadin.rows.find(x=>x.id===id); if(!confirm(r&&r.type==="role"?"למחוק את שורת האחריות?":"למחוק את המקצוע?")) return; state.plan.sadin.rows=state.plan.sadin.rows.filter(x=>x.id!==id); save(); renderPlanBudget(); }
 function sdUpdClass(i,val){ val=val.trim(); if(val) state.plan.sadin.classes[i]=val; save(); renderPlanBudget(); }
 /* גרירה חיה בסדין — שורות מקצוע ועמודות כיתה זזות עם העכבר ומתמקמות תוך כדי */
 function sdApplyColOrder(order){ // order = אינדקסים מקוריים בסדר החדש
   const sd=state.plan.sadin;
   if(!order || order.length!==sd.classes.length) return false;
   sd.classes=order.map(i=>sd.classes[i]);
-  sd.rows.forEach(r=>{ r.cells=order.map(i=>r.cells[i]); });
+  sd.rows.forEach(r=>{ if(Array.isArray(r.cells)) r.cells=order.map(i=>r.cells[i]); });
   return true;
 }
 function sdApplyRowOrder(ids){
@@ -2121,9 +2160,10 @@ function sdColCommit(el){
   renderPlanBudget();
 }
 /* שורות מקצוע */
-let _sdRowEl=null;
+let _sdRowEl=null, _sdRowType=null;
 function sdRowDragStart(e,rid){
   _sdRowEl=e.currentTarget.closest("tr");
+  _sdRowType=_sdRowEl?_sdRowEl.dataset.type:null;
   if(_sdRowEl) _sdRowEl.style.opacity=".45";
   e.dataTransfer.effectAllowed="move";
   try{ e.dataTransfer.setData("text/plain",rid); }catch(_){}
@@ -2131,7 +2171,7 @@ function sdRowDragStart(e,rid){
 function sdRowDragOver(e){
   if(!_sdRowEl) return;
   const tr=e.currentTarget;
-  if(!tr.dataset.rid) return;
+  if(!tr.dataset.rid || tr.dataset.type!==_sdRowType) return; // גרירה רק בתוך אותו חלק (הוראה/אחריות)
   e.preventDefault(); e.dataTransfer.dropEffect="move";
   if(tr===_sdRowEl) return;
   const rect=tr.getBoundingClientRect();
@@ -2142,7 +2182,7 @@ function sdRowDrop(e){ e.preventDefault(); sdRowCommit(); }
 function sdRowDragEnd(e){ sdRowCommit(); }
 function sdRowCommit(){
   if(!_sdRowEl) return;
-  const el=_sdRowEl; _sdRowEl=null;
+  const el=_sdRowEl; _sdRowEl=null; _sdRowType=null;
   el.style.opacity="";
   const ids=[...el.parentNode.querySelectorAll("tr[data-rid]")].map(tr=>tr.dataset.rid);
   if(sdApplyRowOrder(ids)){ save(); toast("הסדר עודכן"); }
@@ -2158,16 +2198,16 @@ function sdAddClass(){
   if(name===null) return;
   const nm=name.trim()||("כיתה "+(state.plan.sadin.classes.length+1));
   state.plan.sadin.classes.push(nm);
-  state.plan.sadin.rows.forEach(r=>r.cells.push({h:0,t:""}));
+  state.plan.sadin.rows.forEach(r=>{ if(Array.isArray(r.cells)) r.cells.push({h:0,t:""}); });
   save(); renderPlanBudget(); toast('נוספה כיתה "'+nm+'"');
 }
 function sdDelClass(i){
   const sd=state.plan.sadin, nm=sd.classes[i];
   if(sd.classes.length<=1){ toast("חייבת להישאר לפחות כיתה אחת"); return; }
-  const hours=sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0);
+  const hours=sd.rows.reduce((s,r)=>s+(Number(r.cells&&r.cells[i]&&r.cells[i].h)||0),0);
   if(!confirm('למחוק את הכיתה "'+nm+'"'+(hours?(' על '+hours+' שעות השיבוץ שלה'):'')+'?')) return;
   sd.classes.splice(i,1);
-  sd.rows.forEach(r=>r.cells.splice(i,1));
+  sd.rows.forEach(r=>{ if(Array.isArray(r.cells)) r.cells.splice(i,1); });
   save(); renderPlanBudget();
 }
 function sdExportCsv(){ sdExportXls(); } // תאימות לאחור
@@ -2182,31 +2222,50 @@ function sdExportXls(){
     '<th rowspan="2" style="border:1px solid #666;background:#eef2f7;padding:5px 9px">הערות</th></tr><tr>'+
     cls.map(()=>'<th style="border:1px solid #666;background:#f4f6f8;padding:3px 6px">שעות</th><th style="border:1px solid #666;background:#f4f6f8;padding:3px 6px">מורה</th>').join("")+
     '</tr>';
-  for(const r of sd.rows){
+  const cw=cls.length*2+2; // מספר עמודות מלא (מקצוע + כיתות + הערות)
+  const teachRows=sd.rows.filter(r=>r.type!=="role"), roleRows=sd.rows.filter(r=>r.type==="role");
+  // חלק הוראה
+  h1+=`<tr><td colspan="${cw}" style="border:1px solid #666;background:#eef3fa;font-weight:bold;text-align:right;padding:5px 9px">שעות הוראה</td></tr>`;
+  for(const r of teachRows){
     h1+='<tr><td style="border:1px solid #999;text-align:right;padding:4px 8px;background:#fffdf3;font-weight:bold">'+esc(r.subject)+'</td>'+
-      r.cells.map(c=>`<td style="border:1px solid #999;text-align:center;padding:4px 8px">${num(c.h)}</td><td style="border:1px solid #999;text-align:center;padding:4px 8px">${esc(c.t||"")}</td>`).join("")+
+      (r.cells||[]).map(c=>`<td style="border:1px solid #999;text-align:center;padding:4px 8px">${num(c.h)}</td><td style="border:1px solid #999;text-align:center;padding:4px 8px">${esc(c.t||"")}</td>`).join("")+
       '<td style="border:1px solid #999;text-align:right;padding:4px 8px;color:#555">'+esc(r.note||"")+'</td></tr>';
   }
-  h1+='<tr><td style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:right;padding:5px 9px">סה"כ שעות</td>'+
-    cls.map((c,i)=>`<td style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:center">${num(sd.rows.reduce((s,r)=>s+(Number(r.cells[i]&&r.cells[i].h)||0),0))}</td><td style="border:1px solid #666;background:#e8f0e8"></td>`).join("")+
-    '<td style="border:1px solid #666;background:#e8f0e8"></td></tr></table>';
+  h1+='<tr><td style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:right;padding:5px 9px">סה"כ שעות הוראה</td>'+
+    cls.map((c,i)=>`<td style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:center">${num(teachRows.reduce((s,r)=>s+(Number(r.cells&&r.cells[i]&&r.cells[i].h)||0),0))}</td><td style="border:1px solid #666;background:#e8f0e8"></td>`).join("")+
+    '<td style="border:1px solid #666;background:#e8f0e8"></td></tr>';
+  // חלק אחריות
+  h1+=`<tr><td colspan="${cw}" style="border:1px solid #666;background:#eef3fa;font-weight:bold;text-align:right;padding:5px 9px">שעות ש"ש על אחריות</td></tr>`;
+  for(const r of roleRows){
+    h1+='<tr><td style="border:1px solid #999;text-align:right;padding:4px 8px;font-weight:bold">'+esc(r.subject)+'</td>'+
+      `<td style="border:1px solid #999;text-align:right;padding:4px 8px">${esc(r.teacher||"")}</td>`+
+      `<td style="border:1px solid #999;text-align:center;padding:4px 8px">${num(r.hours)}</td>`+
+      (cls.length>=2?`<td colspan="${cls.length*2-2}" style="border:1px solid #999"></td>`:"")+
+      '<td style="border:1px solid #999;text-align:right;padding:4px 8px;color:#555">'+esc(r.note||"")+'</td></tr>';
+  }
+  h1+=`<tr><td colspan="2" style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:right;padding:5px 9px">סה"כ שעות אחריות</td><td style="border:1px solid #666;background:#e8f0e8;font-weight:bold;text-align:center">${num(roleRows.reduce((s,r)=>s+(Number(r.hours)||0),0))}</td><td colspan="${cls.length*2}" style="border:1px solid #666;background:#e8f0e8"></td></tr></table>`;
 
-  // ---- טבלה 2: סיכום ש"ש למורה ----
+  // ---- טבלה 2: סיכום ש"ש למורה (הוראה + אחריות ממוזג) ----
   const roleBy={};
   state.plan.salGroups.filter(g=>g.teaching).forEach(g=>g.emps.forEach(e=>{
     const n=(e.name||"").trim(); if(!n) return; const ro=(e.role||"").trim();
     if(ro){ (roleBy[n]=roleBy[n]||[]); if(!roleBy[n].includes(ro)) roleBy[n].push(ro); }
   }));
   const sum={};
-  sd.rows.forEach(r=>r.cells.forEach((c,i)=>{ const t=(c.t||"").trim(); if(!t||t==="-")return; (sum[t]=sum[t]||Array(cls.length).fill(0)); sum[t][i]+=Number(c.h)||0; }));
-  const ordered=Object.entries(sum).sort((a,b)=>b[1].reduce((x,y)=>x+y,0)-a[1].reduce((x,y)=>x+y,0));
+  teachRows.forEach(r=>(r.cells||[]).forEach((c,i)=>{ const t=(c.t||"").trim(); if(!t||t==="-")return; (sum[t]=sum[t]||Array(cls.length).fill(0)); sum[t][i]+=Number(c.h)||0; }));
+  const roleH={};
+  roleRows.forEach(r=>{ const t=(r.teacher||"").trim(); if(!t||t==="-")return; roleH[t]=(roleH[t]||0)+(Number(r.hours)||0); });
+  const allNames=[...new Set([...Object.keys(sum),...Object.keys(roleH)])];
+  const ordered=allNames.map(n=>[n, sum[n]||Array(cls.length).fill(0)])
+    .sort((a,b)=>(b[1].reduce((x,y)=>x+y,0)+(roleH[b[0]]||0))-(a[1].reduce((x,y)=>x+y,0)+(roleH[a[0]]||0)));
+  const sadinTotOf=(name,hs)=>+(hs.reduce((a,b)=>a+b,0)+(roleH[name]||0)).toFixed(2);
   let h2='<table dir="rtl" style="border-collapse:collapse"><tr>'+
     ['מורה','תפקיד',...cls,'סה"כ בסדין','גמול בגרות','סה"כ כולל גמול'].map(x=>`<th style="border:1px solid #666;background:#e3ecfb;padding:5px 9px;font-weight:bold">${esc(x)}</th>`).join("")+'</tr>';
   // שורת סיכום בראש
   if(ordered.length){
     const names=ordered.map(o=>o[0]);
-    const colT=cls.map((c,i)=>+names.reduce((s,t)=>s+sum[t][i],0).toFixed(2));
-    const inSadin=+colT.reduce((a,b)=>a+b,0).toFixed(2);
+    const colT=cls.map((c,i)=>+names.reduce((s,t)=>s+(sum[t]?sum[t][i]:0),0).toFixed(2));
+    const inSadin=+ordered.reduce((s,[n,hs])=>s+sadinTotOf(n,hs),0).toFixed(2);
     const gmulT=+names.reduce((s,t)=>s+(Number(sd.gmul[t])||0),0).toFixed(2);
     h2+='<tr style="background:#e8f0e8;font-weight:bold"><td style="border:1px solid #666;text-align:right;padding:4px 8px">סה"כ</td><td style="border:1px solid #666"></td>'+
       colT.map(v=>`<td style="border:1px solid #666;text-align:center;padding:4px 8px">${num(v)}</td>`).join("")+
@@ -2215,7 +2274,7 @@ function sdExportXls(){
       `<td style="border:1px solid #666;text-align:center;padding:4px 8px">${num(inSadin+gmulT)}</td></tr>`;
   }
   for(const [name,hs] of ordered){
-    const tot=+hs.reduce((a,b)=>a+b,0).toFixed(2), gm=Number(sd.gmul[name])||0;
+    const tot=sadinTotOf(name,hs), gm=Number(sd.gmul[name])||0;
     h2+='<tr><td style="border:1px solid #999;text-align:right;padding:4px 8px;font-weight:bold">'+esc(name)+'</td>'+
       '<td style="border:1px solid #999;text-align:right;padding:4px 8px;color:#555">'+esc((roleBy[name]||[]).join(" · "))+'</td>'+
       hs.map(x=>`<td style="border:1px solid #999;text-align:center;padding:4px 8px">${num(x)}</td>`).join("")+
