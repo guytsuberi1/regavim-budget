@@ -178,6 +178,7 @@
   .pl-drag{cursor:grab;color:#94a3b8;font-size:16px;user-select:none;padding:0 4px}
   .pl-drag:active{cursor:grabbing}
   .pl-lock{white-space:nowrap;color:var(--primary-dark)}
+  .pl-gmul{color:var(--muted);font-weight:400}
   .pl-warn{cursor:help;margin-inline-start:3px}
   .pl-link{display:block;margin-top:3px;max-width:120px;font-size:11px}
   #planbudget input[type="checkbox"]{width:13px;height:13px;padding:0;margin:0;flex:none}
@@ -1816,13 +1817,19 @@ function sdTeacherHours(){
   return m;
 }
 /* פתרון שעות הסדין לעובד שכר: קישור מפורש (sadinLink) → אחרת התאמה אוטומטית לפי שם מנורמל.
+   hours = "סה"כ כולל גמול" (הוראה+אחריות+גמול בגרות); base = בלי גמול; gmul = גמול בגרות בלבד.
    via: "link" (קישור ידני) | "auto" (התאמה אוטומטית) | "broken" (קישור ידני שלא נמצא) | "none" (אין התאמה) */
 function sdEmpHours(e){
   const m=sdTeacherHours();
-  if(e&&e.sadinLink) return (e.sadinLink in m)?{hours:+m[e.sadinLink].toFixed(2),via:"link",key:e.sadinLink}:{hours:null,via:"broken",key:e.sadinLink};
-  const norm={}; for(const k in m){ const n=sdNormName(k); if(!(n in norm)) norm[n]=k; }
+  const gm=(state.plan&&state.plan.sadin&&state.plan.sadin.gmul)||{};
+  const has=(k)=>(k in m)||(Number(gm[k])>0);
+  const pack=(k,via)=>{ const base=+((m[k]||0).toFixed(2)), g=+((Number(gm[k])||0).toFixed(2)); return {hours:+((base+g).toFixed(2)),base,gmul:g,via,key:k}; };
+  if(e&&e.sadinLink) return has(e.sadinLink)?pack(e.sadinLink,"link"):{hours:null,via:"broken",key:e.sadinLink};
+  const norm={};
+  for(const k in m){ const n=sdNormName(k); if(!(n in norm)) norm[n]=k; }
+  for(const k in gm){ if(Number(gm[k])>0){ const n=sdNormName(k); if(!(n in norm)) norm[n]=k; } }
   const key=e?norm[sdNormName(e.name)]:undefined;
-  return key?{hours:+m[key].toFixed(2),via:"auto",key}:{hours:null,via:"none"};
+  return key?pack(key,"auto"):{hours:null,via:"none"};
 }
 function empCost(e,p){
   if(e.calc==="monthly") return (Number(e.monthly)||0)*p.monthFactor*p.employerFactor;
@@ -1946,7 +1953,8 @@ function plWhCell(g,e,sdNames){
   const sel=(cur)=>sdNames.length?`<select class="pl-mini noprint pl-link" title="קשר לשורה בסדין (סיכום ש&quot;ש)" onchange="plUpdEmp('${g.id}','${e.id}','sadinLink',this.value)"><option value="">— אוטומטי —</option>${sdNames.map(([n,h])=>`<option value="${esc(n)}" ${cur===n?"selected":""}>${esc(n)} (${h})</option>`).join("")}</select>`:"";
   if(sh.hours!=null){
     const src=sh.via==="link"?"מקושר ידנית":"התאמה אוטומטית";
-    return `<td class="num"><span class="pl-lock" title="${src} → ${esc(sh.key)} (מהסדין)">🔗 <b>${sh.hours}</b></span>${sel(sh.via==="link"?sh.key:"")}</td>`;
+    const brk=sh.gmul?` — ${sh.base} ש&quot;ש + ${sh.gmul} גמול בגרות`:"";
+    return `<td class="num"><span class="pl-lock" title="${src} → ${esc(sh.key)}${brk} (מהסדין)">🔗 <b>${sh.hours}</b>${sh.gmul?`<small class="pl-gmul"> (כולל ${sh.gmul} גמול)</small>`:""}</span>${sel(sh.via==="link"?sh.key:"")}</td>`;
   }
   const warn=sh.via==="broken"?`הקישור &quot;${esc(sh.key)}&quot; לא נמצא בסדין`:"אין התאמה בסדין — ערך ידני";
   return `<td class="num"><input class="pl-mini" style="width:52px" type="number" step="any" value="${Number(e.wh)||0}" title="שעות שבועיות (ידני)" onchange="plUpdEmp('${g.id}','${e.id}','wh',this.value)"><span class="pl-warn" title="${warn}">⚠️</span>${sel("")}</td>`;
@@ -1955,7 +1963,7 @@ function plEmpInputCell(g,e){
   const on=(f)=>`onchange="plUpdEmp('${g.id}','${e.id}','${f}',this.value)"`;
   if(e.calc==="monthly") return `<input class="pl-mini" type="number" step="any" value="${Number(e.monthly)||0}" title="ברוטו חודשי" ${on("monthly")}> <small>₪/חודש</small>`;
   if(e.calc==="wh"){ const sh=sdEmpHours(e); return g.teaching
-    ? `<small>${sh.hours!=null?`ש"ש מהסדין (${sh.hours})`:`ש"ש ידני (${Number(e.wh)||0})`} × ${ils(state.plan.salParams.costPerWeeklyHour)}</small>`
+    ? `<small>${sh.hours!=null?`ש"ש מהסדין (${sh.hours}${sh.gmul?` — כולל ${sh.gmul} גמול`:""})`:`ש"ש ידני (${Number(e.wh)||0})`} × ${ils(state.plan.salParams.costPerWeeklyHour)}</small>`
     : `<input class="pl-mini" style="width:64px" type="number" step="any" value="${Number(e.wh)||0}" title="שעות שבועיות" ${on("wh")}><small>ש"ש × ${ils(state.plan.salParams.costPerWeeklyHour)}</small>`; }
   if(e.calc==="hourly")  return `<input class="pl-mini" type="number" step="any" value="${Number(e.rate)||0}" title="תעריף לשעה" ${on("rate")}><small>₪/שעה</small> <input class="pl-mini" type="number" step="any" value="${+((Number(e.pct)||0).toFixed(2))}" title="אחוז משרה" ${on("pct")}><small>% משרה</small>`;
   return `<input class="pl-num" type="number" step="any" value="${Number(e.fixed)||0}" title="סכום שנתי" ${on("fixed")}> <small>₪/שנה</small>`;
