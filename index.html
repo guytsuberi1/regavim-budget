@@ -2124,7 +2124,10 @@ function renderPlSadin(){
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">📅 סדין — מערכת שעות שבועית</h2>
-      <button class="btn sec mini noprint" onclick="sdExportXls()" title="ייצוא לאקסל (טבלה מעוצבת + סיכום)" style="font-size:18px;padding:6px 10px">⬇️</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn sec mini noprint" onclick="sdExportPayroll()" title="ייצוא לאקסל לחשבת השכר — גיליונות כיתה + סיכום מורים עם נוסחאות" style="padding:6px 10px">🧾 ייצוא לחשבת</button>
+        <button class="btn sec mini noprint" onclick="sdExportXls()" title="ייצוא לאקסל (טבלה מעוצבת + סיכום)" style="font-size:18px;padding:6px 10px">⬇️</button>
+      </div>
     </div>
     <p class="hint">חלק עליון — שעות הוראה לכל מקצוע בכל כיתה. חלק תחתון — שעות ש"ש על אחריות (ניהול/ריכוז). הסיכום למטה מאחד את שניהם לכל מורה.</p>
     <div class="scroll"><table>
@@ -2255,6 +2258,104 @@ function sdDelClass(i){
   sd.classes.splice(i,1);
   sd.rows.forEach(r=>{ if(Array.isArray(r.cells)) r.cells.splice(i,1); });
   save(); renderPlanBudget();
+}
+/* ===== ייצוא לאקסל של חשבת השכר — קובץ xlsx אמיתי עם נוסחאות (SUMIF וכו') =====
+   4 גיליונות כיתה (לפי שכבה) שנשאבים מהסדין + גיליון "סיכום שעות מורים" מבוסס-נוסחאות
+   שמתעדכן לבד. ללא ספריות חיצוניות. */
+const PAY_CRC=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } return t; })();
+function payCrc32(b){ let c=0xFFFFFFFF; for(let i=0;i<b.length;i++) c=PAY_CRC[(c^b[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function payUtf8(s){ return new TextEncoder().encode(s); }
+function payZip(files){
+  const chunks=[]; const central=[]; let offset=0;
+  const push=b=>{ chunks.push(b); offset+=b.length; };
+  const u16=n=>Uint8Array.of(n&255,(n>>8)&255);
+  const u32=n=>Uint8Array.of(n&255,(n>>8)&255,(n>>16)&255,(n>>>24)&255);
+  for(const f of files){
+    const name=payUtf8(f.name), data=f.data, crc=payCrc32(data), localOffset=offset;
+    for(const p of [u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),name,data]) push(p);
+    central.push({name,crc,size:data.length,localOffset});
+  }
+  const cstart=offset; let csize=0;
+  for(const c of central){ for(const p of [u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(0),u16(0),u32(c.crc),u32(c.size),u32(c.size),u16(c.name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(c.localOffset),c.name]){ chunks.push(p); csize+=p.length; } }
+  for(const p of [u32(0x06054b50),u16(0),u16(0),u16(central.length),u16(central.length),u32(csize),u32(cstart),u16(0)]) chunks.push(p);
+  let total=0; for(const c of chunks) total+=c.length;
+  const out=new Uint8Array(total); let o=0; for(const c of chunks){ out.set(c,o); o+=c.length; } return out;
+}
+function payXesc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function payColLetter(n){ let s=""; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-m-1)/26; } return s; }
+function payCellXml(row,col,cell){ if(cell==null) return ""; const ref=payColLetter(col)+row; const st=cell.style?` s="${cell.style}"`:"";
+  if(cell.f!=null) return `<c r="${ref}"${st}><f>${payXesc(cell.f)}</f></c>`;
+  if(cell.s!=null) return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${payXesc(cell.s)}</t></is></c>`;
+  if(cell.v!=null&&cell.v!=="") return `<c r="${ref}"${st}><v>${cell.v}</v></c>`;
+  return ""; }
+function paySheetXml(sheet){ let body="";
+  sheet.rows.forEach((cells,ri)=>{ const row=ri+1; let rc=""; cells.forEach((c,ci)=>{ if(c) rc+=payCellXml(row,ci+1,c); }); body+=`<row r="${row}">${rc}</row>`; });
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><sheetData>${body}</sheetData></worksheet>`; }
+function payBuildXlsx(sheets){
+  const F=[];
+  F.push({name:"[Content_Types].xml",data:payUtf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>`+sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")+`</Types>`)});
+  F.push({name:"_rels/.rels",data:payUtf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`)});
+  F.push({name:"xl/workbook.xml",data:payUtf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>`+sheets.map((s,i)=>`<sheet name="${payXesc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")+`</sheets></workbook>`)});
+  F.push({name:"xl/_rels/workbook.xml.rels",data:payUtf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`+sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")+`<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`)});
+  F.push({name:"xl/styles.xml",data:payUtf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE3ECFB"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F0E8"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="4"><xf xfId="0"/><xf xfId="0" fontId="1" fillId="2" applyFont="1" applyFill="1"><alignment horizontal="center"/></xf><xf xfId="0" fontId="1" fillId="3" applyFont="1" applyFill="1"><alignment horizontal="center"/></xf><xf xfId="0" fontId="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`)});
+  sheets.forEach((s,i)=>F.push({name:`xl/worksheets/sheet${i+1}.xml`,data:payUtf8(paySheetXml(s))}));
+  return payZip(F);
+}
+function payGradeOf(name){ return String(name||"").replace(/["'\s0-9]+$/,"").trim(); }
+function payRoleCatCol(nm){ nm=String(nm||"");
+  if(/ריכוז|רכז/.test(nm)) return 8; if(/יעוץ|יועץ/.test(nm)) return 6;
+  if(/ניהול|מנהל/.test(nm)) return 5; if(/חינוך/.test(nm)) return 4; return 3; }
+function payBuildSheets(sd,classCounts){
+  const gmul=sd.gmul||{}, classes=sd.classes||[];
+  const teachRows=sd.rows.filter(r=>r.type!=="role"), roleRows=sd.rows.filter(r=>r.type==="role");
+  const grades=[]; classes.forEach(c=>{ const g=payGradeOf(c); if(g&&!grades.includes(g)) grades.push(g); });
+  const gradeCols={}; grades.forEach(g=>gradeCols[g]=[]); classes.forEach((c,i)=>{ const g=payGradeOf(c); if(gradeCols[g]) gradeCols[g].push(i); });
+  const sheetName=g=>"כיתה "+g;
+  const H=s=>({s,style:1}), T=x=>({...x,style:2});
+  const teacherSet=new Set(); const sheets=[];
+  grades.forEach((g,gi)=>{
+    const cols=gradeCols[g]; const data=[];
+    teachRows.forEach(r=>cols.forEach(ci=>{ const cell=r.cells&&r.cells[ci]; const h=Number(cell&&cell.h)||0; const t=(cell&&cell.t||"").trim();
+      if(h>0){ data.push({teacher:t||"-",subject:r.subject||"",catCol:3,hours:h}); if(t&&t!=="-") teacherSet.add(t); } }));
+    if(gi===0){
+      roleRows.forEach(r=>{ const h=Number(r.hours)||0; const t=(r.teacher||"").trim(); if(h>0){ data.push({teacher:t||"-",subject:r.subject||"",catCol:payRoleCatCol(r.subject),hours:h}); if(t&&t!=="-") teacherSet.add(t); } });
+      Object.keys(gmul).forEach(nm=>{ const h=Number(gmul[nm])||0; if(h>0){ data.push({teacher:nm,subject:"גמול בגרות",catCol:7,hours:h}); teacherSet.add(nm); } });
+    }
+    const rows=[];
+    rows.push([{s:'בס"ד',style:3}]); rows.push([]);
+    rows.push([{s:`שעות הוראה תשפ"ז — ${sheetName(g)}`,style:3}]);
+    rows.push([{s:`כיתות ${g}'`},{v:(classCounts&&classCounts[g])||""}]);
+    rows.push([H("שם המורה"),H("מקצוע"),H("שעות"),H("חינוך"),H("ניהול"),H("יעוץ"),H("בגרות"),H("ריכוז"),H('ש"ש כיתה'),H('תשפ"ה')]);
+    const firstData=6;
+    data.forEach((d,k)=>{ const r=firstData+k; const cells=[{s:d.teacher},{s:d.subject}];
+      for(let col=3;col<=8;col++) cells.push(col===d.catCol?{v:d.hours}:null);
+      cells.push({f:`SUM(C${r}:H${r})`}); rows.push(cells); });
+    const totalRow=firstData+data.length; const tr=[T({}),T({})];
+    for(let col=3;col<=9;col++){ const L=payColLetter(col); tr.push(data.length?T({f:`SUM(${L}${firstData}:${L}${totalRow-1})`}):T({v:0})); }
+    rows.push(tr);
+    sheets.push({name:sheetName(g),rows});
+  });
+  const teachers=[...teacherSet].sort((a,b)=>a.localeCompare(b,"he"));
+  const nG=grades.length, totalCol=3+nG, lastYearCol=4+nG;
+  const rows=[];
+  rows.push([{s:'סיכום שעות מורים תשפ"ז — ישיבת רגבים בנימין',style:3}]); rows.push([]);
+  const hdr=[H("שם המורה"),null]; grades.forEach(g=>hdr.push(H(sheetName(g)))); hdr.push(H('סה"כ ש"ש')); hdr.push(H('תשפ"ו')); hdr.push(H("הפרש"));
+  rows.push(hdr);
+  teachers.forEach((nm,k)=>{ const r=4+k; const cells=[{s:nm},null];
+    grades.forEach(g=>{ const sn=sheetName(g); cells.push({f:`SUMIF('${sn}'!$A$6:$A$400,$A${r},'${sn}'!$I$6:$I$400)`}); });
+    cells.push({f:`SUM(${payColLetter(3)}${r}:${payColLetter(2+nG)}${r})`});
+    cells.push(null);
+    cells.push({f:`${payColLetter(lastYearCol)}${r}-${payColLetter(totalCol)}${r}`});
+    rows.push(cells); });
+  sheets.push({name:"סיכום שעות מורים",rows});
+  return sheets;
+}
+function sdExportPayroll(){
+  const sd=state.plan&&state.plan.sadin;
+  if(!sd||!sd.rows||!sd.rows.length){ alert("אין נתונים בסדין לייצוא."); return; }
+  const cc={}; (state.plan.classes||[]).forEach(c=>{ const g=payGradeOf(c.name); if(g) cc[g]=(cc[g]||0)+(Number(c.count)||0); });
+  const sheets=payBuildSheets(sd,cc);
+  download("סדין-לחשבת-"+new Date().toISOString().slice(0,10)+".xlsx", payBuildXlsx(sheets), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }
 function sdExportCsv(){ sdExportXls(); } // תאימות לאחור
 function sdExportXls(){
