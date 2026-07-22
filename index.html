@@ -2284,7 +2284,7 @@ function payZip(files){
 function payXesc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function payColLetter(n){ let s=""; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-m-1)/26; } return s; }
 function payCellXml(row,col,cell){ if(cell==null) return ""; const ref=payColLetter(col)+row; const st=cell.style?` s="${cell.style}"`:"";
-  if(cell.f!=null) return `<c r="${ref}"${st}><f>${payXesc(cell.f)}</f></c>`;
+  if(cell.f!=null) return `<c r="${ref}"${st}><f>${payXesc(String(cell.f).replace(/^=/,""))}</f></c>`;
   if(cell.s!=null) return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${payXesc(cell.s)}</t></is></c>`;
   if(cell.v!=null&&cell.v!=="") return `<c r="${ref}"${st}><v>${cell.v}</v></c>`;
   return ""; }
@@ -2348,7 +2348,53 @@ function payBuildSheets(sd,classCounts){
     cells.push({f:`${payColLetter(lastYearCol)}${r}-${payColLetter(totalCol)}${r}`});
     rows.push(cells); });
   sheets.push({name:"סיכום שעות מורים",rows});
+  // תמחור: משקף את שורות הסיכום של גיליונות הכיתה (מקדמים קשיחים כמו בקובץ החשבת)
+  const gradeInfo={}; grades.forEach(g=>{ const sh=sheets.find(s=>s.name===sheetName(g)); gradeInfo[g]={sheet:sheetName(g),totalRow:sh.rows.length}; });
+  sheets.push(payBuildTimhur(gradeInfo));
   return sheets;
+}
+function payBuildTimhur(gradeInfo){
+  const COL={"ט":"B","י":"C","יא":"D","יב":"E"};
+  const catCol={"כללי":"C","חינוך":"D","ניהול":"E","יעוץ":"F","בגרות":"G","ריכוז":"H"};
+  const R={}; const put=(r,c,cell)=>{ (R[r]=R[r]||{})[c]=cell; };
+  const lbl=(r,txt)=>put(r,"A",{s:txt,style:3});
+  const grades=Object.keys(gradeInfo);
+  const ref=(g,cell)=>`'${gradeInfo[g].sheet}'!${cell}`;
+  const perGrade=(r,fn)=>grades.forEach(g=>{ const col=COL[g]; if(col) put(r,col,fn(g,col)); });
+  const catRef=(g,cat)=>ref(g,catCol[cat]+gradeInfo[g].totalRow);
+  put(1,"A",{s:'טבלת שעות בנימין — תשפ"ז',style:3});
+  put(4,"A",{s:"שעות בעלות",style:1}); put(4,"B",{s:"ט'",style:1}); put(4,"C",{s:"י'",style:1});
+  put(4,"D",{s:"יא'",style:1}); put(4,"E",{s:"יב'",style:1}); put(4,"F",{s:'סה"כ בנימין',style:1});
+  [["שעות כללי בסיסי","כללי"],["שעות חינוך","חינוך"],["שעות ניהול","ניהול"],["שעות ייעוץ","יעוץ"],["שעות בגרות","בגרות"],["שעות ריכוז","ריכוז"]]
+    .forEach(([name,cat],i)=>{ const r=5+i; lbl(r,name); perGrade(r,(g)=>({f:catRef(g,cat)})); put(r,"F",{f:`SUM(B${r}:E${r})`}); });
+  lbl(11,"שעות מיוחדות"); put(11,"F",{f:"SUM(B11:E11)"});
+  lbl(12,'סה"כ'); ["B","C","D","E","F"].forEach(c=>put(12,c,{f:`SUM(${c}5:${c}11)`,style:2}));
+  put(13,"C",{f:"תמחור!D13"}); lbl(14,"שעות  מ.חינוך"); put(14,"C",{f:"תמחור!D14"});
+  lbl(15,"מספר תלמידים"); perGrade(15,(g)=>({f:ref(g,"B4")})); put(15,"F",{f:"SUM(B15:E15)"});
+  const HPS={"ט":2.24,"י":3.8,"יא":3.84,"יב":3.84};
+  lbl(16,"שעות לתלמיד"); grades.forEach(g=>{ const c=COL[g]; if(c&&HPS[g]!=null) put(16,c,{v:HPS[g]}); });
+  lbl(17,'סה"כ שעות בסיס');
+  if(gradeInfo["ט"]) put(17,"B",{f:"20*B16+(B15-20)*1.31"});
+  if(gradeInfo["י"]) put(17,"C",{f:"20*C16+(C15-20)*1.53"});
+  if(gradeInfo["יא"]) put(17,"D",{f:"D15*D16"});
+  if(gradeInfo["יב"]) put(17,"E",{f:"E15*E16"});
+  put(17,"F",{f:"SUM(B17:E17)"});
+  lbl(19,"ש.תפקיד"); put(19,"F",{f:"SUM(B19:D19)"});
+  lbl(20,'סה"כ שעות תוספות'); ["B","C","D","E"].forEach(c=>put(20,c,{f:`${c}15*${c}19`})); put(20,"F",{f:"SUM(B20:D20)"});
+  lbl(22,"משעות מקיף/מוחזקות"); ["B","C","D","E"].forEach(c=>put(22,c,{v:0.1764})); put(22,"F",{f:"SUM(B22:D22)"});
+  lbl(23,'סה"כ שעות מקיף'); ["B","C","D","E"].forEach(c=>put(23,c,{f:`${c}22*${c}12`})); put(23,"F",{f:"SUM(B23:D23)"});
+  put(24,"D",{s:"."}); put(24,"F",{f:"SUM(B24:D24)"});
+  lbl(25,'סה"כ שעות מ.חינוך'); put(25,"B",{f:"B23+B17"}); put(25,"C",{f:"C17"}); put(25,"D",{f:"D17"}); put(25,"E",{f:"E17"}); put(25,"F",{f:"F17+F20+F23"});
+  put(26,"C",{f:"תמחור!D26"}); put(26,"F",{f:"SUM(B26:D26)"});
+  lbl(27,"שעות רב"); put(27,"C",{f:"תמחור!D27"}); put(27,"F",{f:"SUM(B27:D27)"});
+  lbl(28,'סה"כ ת.לימודי יהדות'); put(28,"F",{f:"SUM(B28:E28)"});
+  put(29,"F",{f:"SUM(B29:D29)"});
+  lbl(30,'סה"כ מ.חינך+ש.רב'); ["B","C","D","E"].forEach(c=>put(30,c,{f:`${c}25+${c}28`})); put(30,"F",{f:"F25+F28"});
+  put(31,"F",{f:"SUM(B31:D31)"});
+  lbl(32,"הפרש"); ["B","C","D","E"].forEach(c=>put(32,c,{f:`${c}12-${c}30`})); put(32,"F",{f:"F30-F12"});
+  const rows=[];
+  for(let r=1;r<=32;r++){ const o=R[r]||{}; rows.push(["A","B","C","D","E","F"].map(c=>o[c]||null)); }
+  return {name:"תמחור",rows};
 }
 function sdExportPayroll(){
   const sd=state.plan&&state.plan.sadin;
