@@ -1691,6 +1691,7 @@ function plMigrateSadin(p){
   if(!p.sadin || !Array.isArray(p.sadin.rows)) p.sadin={classes:["ט1","י1","י2","יא1","יב1"], rows:[]};
   if(!Array.isArray(p.sadin.classes) || !p.sadin.classes.length) p.sadin.classes=["ט1","י1","י2","יא1","יב1"];
   if(!p.sadin.gmul || typeof p.sadin.gmul!=="object") p.sadin.gmul={}; // גמול בגרות לכל מורה (לפי שם)
+  if(!p.sadin.lastYear || typeof p.sadin.lastYear!=="object") p.sadin.lastYear={}; // סה"כ ש"ש שנה שעברה (תשפ"ו) לכל מורה, כולל גמול
   p.sadin.rows.forEach(r=>{
     if(!r.id) r.id=uid();
     if(!r.type) r.type=r.type==="role"?"role":"teach";
@@ -2107,18 +2108,28 @@ function renderPlSadin(){
     const teachTot=+hs.reduce((a,b)=>a+b,0).toFixed(2);
     const sadinTot=+(teachTot+(roleH[name]||0)).toFixed(2);
     const gmul=Number(sd.gmul[name])||0;
-    return {name,hs,sadinTot,gmul,totAll:+(sadinTot+gmul).toFixed(2)};
+    const totAll=+(sadinTot+gmul).toFixed(2);
+    const ly=sdLastYearOf(name);
+    const diff=ly.val!=null? +(totAll-ly.val).toFixed(2) : null;
+    return {name,hs,sadinTot,gmul,totAll,ly,diff};
   }).sort((a,b)=>b.sadinTot-a.sadinTot);
+  const diffCellHtml=d=> d.diff==null
+    ? `<td class="num" style="color:var(--muted)">—</td>`
+    : `<td class="num" style="font-weight:bold;color:${d.diff<0?'#c62828':(d.diff>0?'#2e7d32':'inherit')}" title="${d.diff<0?'פחות משנה שעברה':'יותר/שווה לשנה שעברה'}">${d.diff>0?'+':''}${d.diff}</td>`;
   const sumRows=rowsData.map(d=>`<tr><td>${esc(d.name)}</td>
       <td style="font-size:12px;color:#475569">${esc((roleByName[d.name]||[]).join(" · ")||"—")}</td>
       ${d.hs.map(h=>`<td class="num">${+(+h).toFixed(2)}</td>`).join("")}
       <td class="num">${d.sadinTot}</td>
       <td class="num"><input class="pl-mini" style="width:56px" type="number" step="any" value="${d.gmul||""}" placeholder="0" data-name="${esc(d.name)}" onchange="sdUpdGmul(this.dataset.name,this.value)"></td>
-      <td class="num"><b>${d.totAll}</b></td></tr>`).join("");
+      <td class="num"><b>${d.totAll}</b></td>
+      <td class="num"><input class="pl-mini" style="width:56px" type="number" step="any" value="${d.ly.val!=null?d.ly.val:""}" placeholder="0" data-name="${esc(d.name)}" title="סה&quot;כ ש&quot;ש בתשפ&quot;ו (כולל גמול) — ניתן לעריכה" onchange="sdUpdLastYear(this.dataset.name,this.value)"></td>
+      ${diffCellHtml(d)}</tr>`).join("");
   const colTot=cls.map((c,i)=>+rowsData.reduce((s,d)=>s+d.hs[i],0).toFixed(2));
   const sumInSadin=+rowsData.reduce((s,d)=>s+d.sadinTot,0).toFixed(2);
   const gmulTot=+rowsData.reduce((s,d)=>s+d.gmul,0).toFixed(2);
-  const sumTotalsRow=rowsData.length?`<tr class="grand"><td>סה"כ</td><td></td>${colTot.map(v=>`<td class="num">${v}</td>`).join("")}<td class="num">${sumInSadin}</td><td class="num">${gmulTot||""}</td><td class="num">${+(sumInSadin+gmulTot).toFixed(2)}</td></tr>`:"";
+  const lyTot=+rowsData.reduce((s,d)=>s+(d.ly.val||0),0).toFixed(2);
+  const diffTot=+rowsData.reduce((s,d)=>s+(d.diff||0),0).toFixed(2);
+  const sumTotalsRow=rowsData.length?`<tr class="grand"><td>סה"כ</td><td></td>${colTot.map(v=>`<td class="num">${v}</td>`).join("")}<td class="num">${sumInSadin}</td><td class="num">${gmulTot||""}</td><td class="num">${+(sumInSadin+gmulTot).toFixed(2)}</td><td class="num">${lyTot||""}</td><td class="num">${diffTot?((diffTot>0?'+':'')+diffTot):""}</td></tr>`:"";
 
   host.innerHTML=`
   <div class="card">
@@ -2140,11 +2151,14 @@ function renderPlSadin(){
   </div>
   <datalist id="plTeacherList">${teachers.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
   <div class="card">
-    <h2>👨‍🏫 סיכום ש"ש לכל עובד הוראה</h2>
-    <p class="hint">מחושב אוטומטית מהסדין. "סה"כ בסדין" מאחד שעות הוראה + שעות אחריות. "סה"כ כולל גמול" מוסיף גם את גמול הבגרות.</p>
-    <div class="scroll"><table style="max-width:900px">
-      <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th></tr></thead>
-      <tbody>${sumTotalsRow}${sumRows||`<tr><td colspan="${cls.length+5}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">👨‍🏫 סיכום ש"ש לכל עובד הוראה</h2>
+      <button class="btn sec mini noprint" onclick="sdImportLastYear()" title="ייבוא נתוני שנה שעברה (תשפ&quot;ו) מקובץ JSON — ממזג לעמודת תשפ&quot;ו">⬆️ ייבוא שנה שעברה</button>
+    </div>
+    <p class="hint">מחושב אוטומטית מהסדין. "סה"כ בסדין" מאחד שעות הוראה + שעות אחריות. "סה"כ כולל גמול" מוסיף גם את גמול הבגרות. עמודת "תשפ"ו" (שנה שעברה, כולל גמול) ניתנת לעריכה; "הפרש" = השנה פחות שנה שעברה — <b style="color:#c62828">אדום</b> = ירידה בשעות.</p>
+    <div class="scroll"><table style="max-width:1050px">
+      <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th><th>תשפ"ו</th><th>הפרש</th></tr></thead>
+      <tbody>${sumTotalsRow}${sumRows||`<tr><td colspan="${cls.length+7}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
     </table></div>
   </div>`;
 }
@@ -2241,6 +2255,32 @@ function sdUpdGmul(name,val){
   const v=Number(val)||0;
   if(v) state.plan.sadin.gmul[name]=v; else delete state.plan.sadin.gmul[name];
   save(); renderPlanBudget();
+}
+function sdUpdLastYear(name,val){
+  const v=Number(val)||0;
+  if(v) state.plan.sadin.lastYear[name]=v; else delete state.plan.sadin.lastYear[name];
+  save(); renderPlanBudget();
+}
+/* סה"כ ש"ש שנה שעברה למורה: התאמה מפורשת (לפי שם) → אחרת התאמה חכמה לפי שם מנורמל. */
+function sdLastYearOf(name){
+  const ly=(state.plan.sadin&&state.plan.sadin.lastYear)||{};
+  if(name in ly) return {val:+Number(ly[name]).toFixed(2), exact:true};
+  const nn=sdNormName(name);
+  for(const k in ly){ if(sdNormName(k)===nn) return {val:+Number(ly[k]).toFixed(2), exact:false, key:k}; }
+  return {val:null};
+}
+/* ייבוא נתוני שנה שעברה — מיזוג לתוך sadin.lastYear (לא נוגע בשאר הסדין) */
+function sdImportLastYear(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json";
+  inp.onchange=function(){ const f=this.files[0]; if(!f) return; const r=new FileReader();
+    r.onload=()=>{ try{ const obj=JSON.parse(r.result);
+      const map=obj.lastYear||obj; let n=0;
+      state.plan.sadin.lastYear=state.plan.sadin.lastYear||{};
+      Object.keys(map).forEach(k=>{ const v=Number(map[k]); if(k&&v){ state.plan.sadin.lastYear[k]=+v.toFixed(2); n++; } });
+      save(); renderPlanBudget(); alert("יובאו "+n+" רשומות של שנה שעברה (תשפ\"ו).");
+    }catch(e){ alert("קובץ לא תקין: "+e.message); } };
+    r.readAsText(f); };
+  inp.click();
 }
 function sdAddClass(){
   const name=prompt("שם הכיתה החדשה:","");
@@ -2341,11 +2381,13 @@ function payBuildSheets(sd,classCounts){
   rows.push([{s:'סיכום שעות מורים תשפ"ז — ישיבת רגבים בנימין',style:3}]); rows.push([]);
   const hdr=[H("שם המורה"),null]; grades.forEach(g=>hdr.push(H(sheetName(g)))); hdr.push(H('סה"כ ש"ש')); hdr.push(H('תשפ"ו')); hdr.push(H("הפרש"));
   rows.push(hdr);
+  const lyMap=sd.lastYear||{}, lyNorm={}; for(const k in lyMap){ const v=Number(lyMap[k])||0; if(v) lyNorm[sdNormName(k)]=v; }
+  const lyOf=nm=>{ const e=Number(lyMap[nm])||0; if(e) return +e.toFixed(2); const n=lyNorm[sdNormName(nm)]; return n?+n.toFixed(2):null; };
   teachers.forEach((nm,k)=>{ const r=4+k; const cells=[{s:nm},null];
     grades.forEach(g=>{ const sn=sheetName(g); cells.push({f:`SUMIF('${sn}'!$A$6:$A$400,$A${r},'${sn}'!$I$6:$I$400)`}); });
     cells.push({f:`SUM(${payColLetter(3)}${r}:${payColLetter(2+nG)}${r})`});
-    cells.push(null);
-    cells.push({f:`${payColLetter(lastYearCol)}${r}-${payColLetter(totalCol)}${r}`});
+    const lyv=lyOf(nm); cells.push(lyv!=null?{v:lyv}:null);
+    cells.push({f:`${payColLetter(totalCol)}${r}-${payColLetter(lastYearCol)}${r}`});
     rows.push(cells); });
   sheets.push({name:"סיכום שעות מורים",rows});
   // תמחור: משקף את שורות הסיכום של גיליונות הכיתה (מקדמים קשיחים כמו בקובץ החשבת)
