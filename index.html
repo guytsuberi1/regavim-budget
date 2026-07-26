@@ -2048,6 +2048,9 @@ function renderPlSalary(t){
 }
 
 /* ====== סדין: מערכת שעות שבועית + סיכום ש"ש למורה ====== */
+let sdSortKey="sadinTot", sdSortDir=-1; // מיון טבלת הסיכום
+function sdSort(key){ if(sdSortKey===key) sdSortDir*=-1; else { sdSortKey=key; sdSortDir=(key==="name"||key==="role")?1:-1; } renderPlanBudget(); }
+function sdSortTh(key,label){ const active=sdSortKey===key; const car=active?(sdSortDir<0?" ▼":" ▲"):" ⇅"; return `<th onclick="sdSort('${key}')" style="cursor:pointer;user-select:none;white-space:nowrap${active?';color:var(--primary-dark);background:var(--primary-light)':''}" title="לחץ למיון (לחיצה חוזרת הופכת סדר)">${label}<span style="opacity:${active?1:.35};font-size:11px">${car}</span></th>`; }
 function renderPlSadin(){
   const host=document.getElementById("plSadin"); if(!host || !state.plan || !state.plan.sadin) return;
   const sd=state.plan.sadin, cls=sd.classes;
@@ -2112,7 +2115,23 @@ function renderPlSadin(){
     const ly=sdLastYearOf(name);
     const diff=ly.val!=null? +(totAll-ly.val).toFixed(2) : null;
     return {name,hs,sadinTot,gmul,totAll,ly,diff};
-  }).sort((a,b)=>b.sadinTot-a.sadinTot);
+  });
+  // מיון לפי העמודה הנבחרת (לחיצה על כותרת)
+  const sdSortStr=(sdSortKey==="name"||sdSortKey==="role");
+  const sdRowVal=(d)=>{
+    if(sdSortKey==="name") return d.name||"";
+    if(sdSortKey==="role") return (roleByName[d.name]||[]).join(" ");
+    if(sdSortKey==="sadinTot") return d.sadinTot;
+    if(sdSortKey==="gmul") return d.gmul;
+    if(sdSortKey==="totAll") return d.totAll;
+    if(sdSortKey==="ly") return d.ly.val==null?-Infinity:d.ly.val;
+    if(sdSortKey==="diff") return d.diff==null?-Infinity:d.diff;
+    if(sdSortKey.slice(0,4)==="cls:") return d.hs[+sdSortKey.slice(4)]||0;
+    return d.sadinTot;
+  };
+  rowsData.sort((a,b)=>{ const va=sdRowVal(a), vb=sdRowVal(b);
+    const r=sdSortStr?String(va).localeCompare(String(vb),"he"):(va-vb);
+    return r*sdSortDir; });
   const diffCellHtml=d=> d.diff==null
     ? `<td class="num" style="color:var(--muted)">—</td>`
     : `<td class="num" style="font-weight:bold;color:${d.diff<0?'#c62828':(d.diff>0?'#2e7d32':'inherit')}" title="${d.diff<0?'פחות משנה שעברה':'יותר/שווה לשנה שעברה'}">${d.diff>0?'+':''}${d.diff}</td>`;
@@ -2157,7 +2176,7 @@ function renderPlSadin(){
     </div>
     <p class="hint">מחושב אוטומטית מהסדין. "סה"כ בסדין" מאחד שעות הוראה + שעות אחריות. "סה"כ כולל גמול" מוסיף גם את גמול הבגרות. עמודת "תשפ"ו" (שנה שעברה, כולל גמול) ניתנת לעריכה; "הפרש" = השנה פחות שנה שעברה — <b style="color:#c62828">אדום</b> = ירידה בשעות.</p>
     <div class="scroll"><table style="max-width:1050px">
-      <thead><tr><th>מורה</th><th>תפקיד</th>${cls.map(c=>`<th>${esc(c)}</th>`).join("")}<th>סה"כ בסדין</th><th>גמול בגרות</th><th>סה"כ כולל גמול</th><th>תשפ"ו</th><th>הפרש</th></tr></thead>
+      <thead><tr>${sdSortTh("name","מורה")}${sdSortTh("role","תפקיד")}${cls.map((c,i)=>sdSortTh("cls:"+i,esc(c))).join("")}${sdSortTh("sadinTot",'סה"כ בסדין')}${sdSortTh("gmul","גמול בגרות")}${sdSortTh("totAll",'סה"כ כולל גמול')}${sdSortTh("ly",'תשפ"ו')}${sdSortTh("diff","הפרש")}</tr></thead>
       <tbody>${sumTotalsRow}${sumRows||`<tr><td colspan="${cls.length+7}" style="text-align:center;color:var(--muted)">אין עדיין שיבוצים בסדין</td></tr>`}</tbody>
     </table></div>
   </div>`;
