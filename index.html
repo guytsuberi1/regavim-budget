@@ -668,9 +668,19 @@ function fyFraction(){
 }
 
 /* ====== חישובים ====== */
+/* תנועה שייכת לשנת התקציב הנוכחית? (השנה מוגדרת ב"תכנון ונתונים": 1/9 עד 1/9)
+   בלי הסינון הזה, במעבר שנה "נוצל" ממשיך לספור את החשבוניות של השנה שעברה
+   וכל הקטגוריות נראות בחריגה. */
+function inFy(dateISO){
+  const d=String(dateISO||""); if(!d) return true;
+  const s=state.fiscalYear&&state.fiscalYear.start, e=state.fiscalYear&&state.fiscalYear.end;
+  if(!s||!e) return true;
+  return d>=s && d<e;
+}
+function fyTx(){ return state.transactions.filter(t=>inFy(t.date)); }
 function actualBySub(){
   const m={};
-  for(const t of state.transactions){
+  for(const t of fyTx()){
     const k=t.main+"||"+t.sub;
     m[k]=(m[k]||0)+Number(t.amount||0);
   }
@@ -1521,7 +1531,7 @@ function monthlyPlanOf(c, n){
 }
 function actualByMonthSub(){
   const m={};
-  for(const t of state.transactions){
+  for(const t of fyTx()){
     const k=(t.main||"")+"||"+(t.sub||""), ym=(t.date||"").slice(0,7);
     if(!m[k]) m[k]={};
     m[k][ym]=(m[k][ym]||0)+Number(t.amount||0);
