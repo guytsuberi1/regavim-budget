@@ -38,6 +38,9 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:18px;box-shadow:var(--shadow)}
   h2{margin:0 0 4px;font-size:19px}
   .hint{color:var(--muted);font-size:13px;margin:0 0 16px}
+  /* חיווי שנת התקציב שאליה החשבונית תיכנס — לפי התאריך שלה */
+  .fy-hint{font-size:12px;color:var(--muted);margin-top:3px;min-height:15px}
+  .fy-hint.other{color:#8a5a00;font-weight:600}
   label{display:block;font-size:13px;font-weight:600;margin-bottom:5px;color:#374151}
   input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;background:#fff}
   textarea{resize:vertical;min-height:42px;line-height:1.5}
@@ -260,7 +263,7 @@
           </div>
         </div>
         <div class="grid">
-          <div><label>תאריך</label><input type="date" id="f_date" required></div>
+          <div><label>תאריך</label><input type="date" id="f_date" required><div id="f_fyHint" class="fy-hint"></div></div>
           <div><label>קטגוריה ראשית</label><select id="f_main" required></select></div>
           <div><label>תת-קטגוריה</label><select id="f_sub" required></select></div>
           <div><label>סכום (₪)</label><input type="number" id="f_amount" step="0.01" min="0" required></div>
@@ -689,6 +692,30 @@ function actualBySub(){
 function mainOrder(){
   const seen=[]; for(const c of state.categories){ if(!seen.includes(c.main)) seen.push(c.main); } return seen;
 }
+
+/* ====== קטגוריות לפי שנת התקציב של החשבונית ======
+   לכל שנת תקציב יש רשימת קטגוריות משלה: state.categories = השנה הפעילה,
+   state.fyCats[<שנה>] = צילום של כל שנה אחרת (נשמר באפליקציית התפעול במעבר שנה).
+   הבוררים בטופס נגזרים מ*תאריך החשבונית*, כדי שחשבונית מאוחרת של שנה קודמת
+   תמשיך לקבל את הקטגוריות שהיו נכונות לאותה שנה. */
+function fyOfDate(dateISO){
+  const d=String(dateISO||""); if(d.length<7) return null;
+  const y=parseInt(d.slice(0,4),10), m=parseInt(d.slice(5,7),10);
+  if(isNaN(y)||isNaN(m)) return null;
+  return m>=9 ? y : y-1;                    // שנת התקציב מתחילה ב-1/9
+}
+function activeFy(){
+  return fyOfDate(state.fiscalYear && state.fiscalYear.start) ?? fyOfDate(new Date().toISOString().slice(0,10));
+}
+function fyLabelOf(y){ return y==null ? "" : y+"/"+String(y+1).slice(2); }
+/* הקטגוריות הרלוונטיות לתאריך נתון. אין צילום לאותה שנה → נופלים לרשימה הפעילה. */
+function catsForDate(dateISO){
+  const fy=fyOfDate(dateISO);
+  if(fy==null || fy===activeFy()) return state.categories||[];
+  const snap=(state.fyCats||{})[fy];
+  return (snap && snap.length) ? snap : (state.categories||[]);
+}
+function formCats(){ return catsForDate(document.getElementById("f_date")?.value); }
 function paceClass(rel){ // rel = actual/relativeBudget
   if(rel>1.0) return "p-red"; if(rel>=0.85) return "p-orange"; return "p-green";
 }
@@ -712,17 +739,48 @@ document.querySelectorAll("nav button").forEach(b=>{
 })();
 
 /* ====== מסך הזנת חשבונית ====== */
+/* ערך שכבר רשום על החשבונית נשאר בבורר גם אם הקטגוריה בוטלה בשנה ההיא —
+   אחרת עריכה של חשבונית ישנה הייתה מאפסת בשקט את הסיווג שלה. */
+function keepOption(list, cur){
+  return (cur && !list.includes(cur)) ? list.concat([cur]) : list;
+}
 function fillMainSelect(){
   const sel=document.getElementById("f_main");
   const cur=sel.value;
-  sel.innerHTML='<option value="">— בחר —</option>'+mainOrder().map(m=>`<option>${esc(m)}</option>`).join("");
+  const seen=[]; for(const c of formCats()){ if(!seen.includes(c.main)) seen.push(c.main); }
+  sel.innerHTML='<option value="">— בחר —</option>'+keepOption(seen,cur).map(m=>`<option>${esc(m)}</option>`).join("");
   if(cur) sel.value=cur;
 }
 function fillSubSelect(){
   const main=document.getElementById("f_main").value;
   const sel=document.getElementById("f_sub");
-  const subs=state.categories.filter(c=>c.main===main).map(c=>c.sub);
-  sel.innerHTML='<option value="">— בחר —</option>'+subs.map(s=>`<option>${esc(s)}</option>`).join("");
+  const cur=sel.value;
+  const subs=formCats().filter(c=>c.main===main).map(c=>c.sub);
+  sel.innerHTML='<option value="">— בחר —</option>'+keepOption(subs,cur).map(s=>`<option>${esc(s)}</option>`).join("");
+  if(cur) sel.value=cur;
+}
+/* חיווי מתחת לתאריך: לאיזו שנת תקציב החשבונית תיכנס, ומתי זו לא השנה הפעילה */
+function updateFyHint(){
+  const el=document.getElementById("f_fyHint"); if(!el) return;
+  const d=document.getElementById("f_date").value, fy=fyOfDate(d);
+  if(fy==null){ el.textContent=""; el.className="fy-hint"; return; }
+  const other=fy!==activeFy();
+  el.textContent="שנת תקציב "+fyLabelOf(fy)+(other?" — לא השנה הפעילה":"");
+  el.className="fy-hint"+(other?" other":"");
+}
+/* שינוי התאריך עשוי להעביר את החשבונית לשנה אחרת — ולכן גם לרשימת קטגוריות אחרת */
+function onFormDateChange(){ updateFyHint(); fillMainSelect(); fillSubSelect(); }
+/* קביעת שני הבוררים יחד — משמש בעריכה/שכפול, שם הסיווג מגיע מהרשומה עצמה
+   וייתכן שהוא כבר לא קיים ברשימה של אותה שנה. */
+function setCatSelects(main,sub){
+  const mSel=document.getElementById("f_main"), sSel=document.getElementById("f_sub");
+  mSel.value=""; sSel.value="";
+  fillMainSelect();
+  if(main && !Array.from(mSel.options).some(o=>o.value===main)) mSel.add(new Option(main,main));
+  mSel.value=main||"";
+  fillSubSelect();
+  if(sub && !Array.from(sSel.options).some(o=>o.value===sub)) sSel.add(new Option(sub,sub));
+  sSel.value=sub||"";
 }
 function fillSupplierList(){
   const dir=(state.suppliers||[]).map(s=>s.name).filter(Boolean);
@@ -730,6 +788,7 @@ function fillSupplierList(){
   document.getElementById("supplierList").innerHTML=names.map(n=>`<option value="${esc(n)}">`).join("");
 }
 document.getElementById("f_main").addEventListener("change",fillSubSelect);
+document.getElementById("f_date").addEventListener("change",onFormDateChange);
 
 /* השלמה אוטומטית לשדות הזמנת הרכש לפי מילויים קודמים */
 function uniqVals(key){ return [...new Set(state.transactions.map(t=>t[key]).filter(Boolean))].sort(); }
@@ -810,7 +869,7 @@ function resetForm(){
   document.getElementById("f_manager").value="גיא צוברי";
   document.querySelector('input[name="kind"][value="invoice"]').checked=true;
   applyKind();
-  fillSubSelect();
+  updateFyHint(); fillMainSelect(); fillSubSelect();
 }
 document.getElementById("cancelEdit").onclick=resetForm;
 /* החלפת תצוגה בין סוגי ההוצאה */
@@ -945,11 +1004,14 @@ function applyExtracted(d){
   const dt=(d.docType||"").toString().trim();
   if(["חשבונית מס","דרישת תשלום","קבלה","חשבון עסקה","אחר"].includes(dt)) document.getElementById("f_docType").value=dt;
   set("f_desc",(d.description||"").toString().trim());
+  updateFyHint();                              // התאריך מהמסמך עשוי לשייך לשנה אחרת
+  const cats=formCats();
   const main=(d.main||"").toString().trim();
-  if(main && mainOrder().includes(main)){
-    document.getElementById("f_main").value=main; fillSubSelect();
+  if(main && cats.some(c=>c.main===main)){
     const sub=(d.sub||"").toString().trim();
-    if(sub && state.categories.some(c=>c.main===main && c.sub===sub)) document.getElementById("f_sub").value=sub;
+    setCatSelects(main, (sub && cats.some(c=>c.main===main && c.sub===sub)) ? sub : "");
+  } else {
+    fillMainSelect(); fillSubSelect();
   }
 }
 
@@ -989,8 +1051,8 @@ function editTx(id){
   applyKind();
   document.getElementById("editId").value=t.id;
   document.getElementById("f_date").value=t.date;
-  document.getElementById("f_main").value=t.main; fillSubSelect();
-  document.getElementById("f_sub").value=t.sub;
+  updateFyHint();
+  setCatSelects(t.main,t.sub);
   document.getElementById("f_amount").value=t.amount;
   if(kind==="invoice"){
     document.getElementById("f_supplier").value=t.supplier||"";
@@ -1024,8 +1086,8 @@ function duplicateTx(id){
   applyKind();
   document.getElementById("editId").value=""; // תנועה חדשה — לא עריכה
   document.getElementById("f_date").value=t.date;
-  document.getElementById("f_main").value=t.main; fillSubSelect();
-  document.getElementById("f_sub").value=t.sub;
+  updateFyHint();
+  setCatSelects(t.main,t.sub);
   document.getElementById("f_amount").value=t.amount;
   if(kind==="invoice"){
     document.getElementById("f_supplier").value=t.supplier||"";
@@ -3032,16 +3094,22 @@ document.getElementById("odDisconnect").onclick=async()=>{ fileHandle=null; pend
 
 /* ====== כללי ====== */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-/* ====== קטלוג תנועות: שיוך קטגוריות בעריכה מהירה ====== */
-function catSubsOf(main){ return state.categories.filter(c=>c.main===main).map(c=>c.sub); }
+/* ====== קטלוג תנועות: שיוך קטגוריות בעריכה מהירה ======
+   גם כאן הקטגוריות נגזרות מתאריך התנועה, ולא מהשנה הפעילה. */
+function catSubsOf(main,dateISO){ return catsForDate(dateISO).filter(c=>c.main===main).map(c=>c.sub); }
+function catMainsOf(dateISO){
+  const seen=[]; for(const c of catsForDate(dateISO)){ if(!seen.includes(c.main)) seen.push(c.main); } return seen;
+}
 function renderCatalog(){
   const tb=document.querySelector("#catalogTable tbody"); if(!tb) return;
   const list=[...state.transactions].sort((a,b)=>(a.main||"").localeCompare(b.main||"")||(a.sub||"").localeCompare(b.sub||"")||(a.date||"").localeCompare(b.date||""));
-  const mains=mainOrder();
   document.getElementById("catalogCount").textContent="סה\"כ "+list.length+" תנועות";
   tb.innerHTML=list.map(t=>{
+    // הערך הרשום נשאר גם אם הקטגוריה בוטלה בשנה ההיא — אחרת הבורר היה מציג ריק
+    const mains=keepOption(catMainsOf(t.date), t.main);
+    const subs=keepOption(catSubsOf(t.main,t.date), t.sub);
     const mainOpts='<option value=""></option>'+mains.map(m=>`<option ${m===t.main?"selected":""}>${esc(m)}</option>`).join("");
-    const subOpts='<option value=""></option>'+catSubsOf(t.main).map(s=>`<option ${s===t.sub?"selected":""}>${esc(s)}</option>`).join("");
+    const subOpts='<option value=""></option>'+subs.map(s=>`<option ${s===t.sub?"selected":""}>${esc(s)}</option>`).join("");
     return `<tr>
     <td class="num">${esc(t.date)}</td><td>${esc(payee(t))}</td><td>${esc(t.description||"")}</td><td class="num">${ils(t.amount)}</td>
     <td><select onchange="catSetMain('${t.id}',this)">${mainOpts}</select></td>
@@ -3052,13 +3120,13 @@ function catSetMain(id,sel){
   const t=state.transactions.find(x=>x.id===id); if(!t) return;
   t.main=sel.value; t.sub=""; // איפוס התת בעת החלפת ראשית
   const subSel=sel.closest("tr").querySelector("select.sub");
-  subSel.innerHTML='<option value=""></option>'+catSubsOf(t.main).map(s=>`<option>${esc(s)}</option>`).join("");
+  subSel.innerHTML='<option value=""></option>'+catSubsOf(t.main,t.date).map(s=>`<option>${esc(s)}</option>`).join("");
   save(); toast("עודכן");
 }
 function catSetSub(id,val){ const t=state.transactions.find(x=>x.id===id); if(!t) return; t.sub=val; save(); toast("עודכן"); }
 function renderAll(){
   document.getElementById("fyLabel").textContent=state.fiscalYear.start+" — "+state.fiscalYear.end;
-  fillMainSelect(); fillSubSelect(); fillSupplierList(); fillPoDatalists();
+  updateFyHint(); fillMainSelect(); fillSubSelect(); fillSupplierList(); fillPoDatalists();
   renderTxTable(); renderDashboard(); renderWorksheet(); renderPlanBudget(); renderSuppliers(); renderEmployees(); renderPlanning(); renderContacts(); renderSuppliersDir();
   fillCatMain(); fillCatSub(); renderCatInvoices(); renderCatalog();
 }
