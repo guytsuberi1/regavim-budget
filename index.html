@@ -527,11 +527,12 @@
   <section id="planning" class="tab">
     <div class="card">
       <h2>שנת התקציב</h2>
-      <div class="grid" style="max-width:520px">
-        <div><label>תאריך התחלה</label><input type="date" id="fyStart"></div>
-        <div><label>תאריך סיום</label><input type="date" id="fyEnd"></div>
-      </div>
-      <div class="btnbar"><button class="btn mini" id="saveFy">עדכון שנת תקציב</button></div>
+      <div id="fyInfo" style="font-size:15px;font-weight:600"></div>
+      <p class="hint" style="margin-top:6px">
+        שנת התקציב נקבעת לפי התאריך בלבד — 1 בספטמבר עד 31 באוגוסט. אין מה להגדיר ואין מה ללחוץ:
+        ב-1 בספטמבר היא מתחלפת מעצמה, הקטגוריות של השנה שהסתיימה נשמרות, והתכנון שהוכן לשנה החדשה
+        (במסך "קטגוריות תקציב" שבאפליקציית התפעול) נכנס לתוקף.
+      </p>
     </div>
     <div class="card">
       <h2>קטגוריות ותקציב שנתי</h2>
@@ -675,10 +676,8 @@ function fyFraction(){
    בלי הסינון הזה, במעבר שנה "נוצל" ממשיך לספור את החשבוניות של השנה שעברה
    וכל הקטגוריות נראות בחריגה. */
 function inFy(dateISO){
-  const d=String(dateISO||""); if(!d) return true;
-  const s=state.fiscalYear&&state.fiscalYear.start, e=state.fiscalYear&&state.fiscalYear.end;
-  if(!s||!e) return true;
-  return d>=s && d<e;
+  const f = fyOfDate(dateISO);
+  return f === null ? true : f === activeFy();
 }
 function fyTx(){ return state.transactions.filter(t=>inFy(t.date)); }
 function actualBySub(){
@@ -704,8 +703,25 @@ function fyOfDate(dateISO){
   if(isNaN(y)||isNaN(m)) return null;
   return m>=9 ? y : y-1;                    // שנת התקציב מתחילה ב-1/9
 }
-function activeFy(){
-  return fyOfDate(state.fiscalYear && state.fiscalYear.start) ?? fyOfDate(new Date().toISOString().slice(0,10));
+/* **שנת התקציב נקבעת לפי התאריך בלבד.** 1/9/25–31/8/26 היא 25/26,
+   ורק ב-1/9/26 היא הופכת ל-26/27. לא תלוי בשום הגדרה או לחיצה. */
+function activeFy(){ return fyOfDate(new Date().toISOString().slice(0,10)); }
+/* מעבר שנה אוטומטי: כשהלוח עובר ל-1/9, הקטגוריות של השנה שהסתיימה נשמרות
+   כצילום, והתכנון שהוכן לשנה החדשה (אם הוכן) הופך לרשימה הפעילה. */
+function ensureFyRollover(){
+  const run = activeFy();
+  if(state.categoriesYear == null){ state.categoriesYear = run; return false; }
+  if(state.categoriesYear >= run) return false;
+  if(!state.fyCats) state.fyCats = {};
+  state.fyCats[state.categoriesYear] = JSON.parse(JSON.stringify(state.categories || []));
+  const planned = state.fyCats[run];
+  if(planned && planned.length){
+    state.categories = JSON.parse(JSON.stringify(planned));
+    delete state.fyCats[run];
+  }
+  state.categoriesYear = run;
+  state.fiscalYear = { start: run + "-09-01", end: (run + 1) + "-09-01" };
+  return true;
 }
 function fyLabelOf(y){ return y==null ? "" : y+"/"+String(y+1).slice(2); }
 /* הקטגוריות הרלוונטיות לתאריך נתון. אין צילום לאותה שנה → נופלים לרשימה הפעילה. */
@@ -2926,8 +2942,9 @@ function drawBars(){
 
 /* ====== תכנון ====== */
 function renderPlanning(){
-  document.getElementById("fyStart").value=state.fiscalYear.start;
-  document.getElementById("fyEnd").value=state.fiscalYear.end;
+  const _af=activeFy();
+  document.getElementById("fyInfo").textContent=
+    "שנת תקציב " + _af + "/" + String(_af+1).slice(2) + " · 1/9/" + String(_af).slice(2) + " – 31/8/" + String(_af+1).slice(2);
   const tb=document.querySelector("#catTable tbody");
   tb.innerHTML=state.categories.map(c=>`<tr draggable="true" data-id="${c.id}" ondragstart="catDragStart(event,'${c.id}')" ondragover="catDragOver(event)" ondragleave="catDragLeave(event)" ondrop="catDrop(event,'${c.id}')" ondragend="catDragEnd(event)">
     <td class="noprint" style="cursor:move;text-align:center;color:var(--muted)" title="גרור לשינוי סדר">⠿</td>
@@ -2967,11 +2984,6 @@ document.getElementById("addCat").onclick=()=>{
   save(); renderPlanning(); fillMainSelect();
   const first=document.querySelector("#catTable tbody tr input"); if(first){ first.focus(); first.select(); } // מיקוד בשורה החדשה שבראש
   toast("נוספה קטגוריה — ערוך אותה למעלה");
-};
-document.getElementById("saveFy").onclick=()=>{
-  state.fiscalYear.start=document.getElementById("fyStart").value;
-  state.fiscalYear.end=document.getElementById("fyEnd").value;
-  save(); renderAll(); toast("שנת התקציב עודכנה");
 };
 
 /* ====== גיבוי / שחזור / CSV ====== */
@@ -3125,7 +3137,10 @@ function catSetMain(id,sel){
 }
 function catSetSub(id,val){ const t=state.transactions.find(x=>x.id===id); if(!t) return; t.sub=val; save(); toast("עודכן"); }
 function renderAll(){
-  document.getElementById("fyLabel").textContent=state.fiscalYear.start+" — "+state.fiscalYear.end;
+  // מעבר שנה קורה מעצמו לפי הלוח — אין כפתור ואין מה ללחוץ
+  if(ensureFyRollover()){ save(); toast("שנת התקציב עברה ל-"+activeFy()+"/"+String(activeFy()+1).slice(2)); }
+  const af=activeFy();
+  document.getElementById("fyLabel").textContent=af+"/"+String(af+1).slice(2)+"  ("+af+"-09-01 — "+(af+1)+"-08-31)";
   updateFyHint(); fillMainSelect(); fillSubSelect(); fillSupplierList(); fillPoDatalists();
   renderTxTable(); renderDashboard(); renderWorksheet(); renderPlanBudget(); renderSuppliers(); renderEmployees(); renderPlanning(); renderContacts(); renderSuppliersDir();
   fillCatMain(); fillCatSub(); renderCatInvoices(); renderCatalog();
