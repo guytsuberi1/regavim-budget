@@ -272,7 +272,12 @@
         <!-- שדות חשבונית ספק -->
         <div id="invoiceFields">
           <div class="grid" style="margin-top:14px">
-            <div><label>ספק</label><input id="f_supplier" list="supplierList" autocomplete="off"><datalist id="supplierList"></datalist></div>
+            <div><label>ספק</label>
+              <div style="display:flex;gap:6px">
+                <select id="f_supplier" style="flex:1;min-width:0"></select>
+                <button type="button" class="btn mini" id="newSupplierBtn" title="ספק שאינו ברשימה">➕</button>
+              </div>
+            </div>
             <div><label>סוג מסמך</label><select id="f_docType"><option>חשבונית מס</option><option>דרישת תשלום</option><option>קבלה</option><option>חשבון עסקה</option><option>אחר</option></select></div>
             <div><label>מספר חשבונית</label><input id="f_invoice" autocomplete="off"></div>
           </div>
@@ -798,13 +803,63 @@ function setCatSelects(main,sub){
   if(sub && !Array.from(sSel.options).some(o=>o.value===sub)) sSel.add(new Option(sub,sub));
   sSel.value=sub||"";
 }
-function fillSupplierList(){
+/* בורר ספקים סגור — כדי שאותו ספק לא ייכתב בארבעה כתיבים שונים.
+   ספק שאינו ברשימה נוסף דרך הכפתור, עם אזהרה כשהשם דומה לקיים. */
+function supplierNames(){
   const dir=(state.suppliers||[]).map(s=>s.name).filter(Boolean);
-  const names=[...new Set([...dir, ...state.transactions.map(t=>t.supplier).filter(Boolean)])].sort();
-  document.getElementById("supplierList").innerHTML=names.map(n=>`<option value="${esc(n)}">`).join("");
+  const used=state.transactions.map(t=>t.supplier).filter(Boolean);
+  return [...new Set([...dir, ...used])].sort((a,b)=>a.localeCompare(b,'he'));
+}
+function fillSupplierList(){
+  const sel=document.getElementById("f_supplier"); if(!sel) return;
+  const cur=sel.value;
+  const names=supplierNames();
+  sel.innerHTML='<option value="">— בחר ספק —</option>'+names.map(n=>`<option>${esc(n)}</option>`).join("");
+  if(cur){ if(!names.includes(cur)) sel.add(new Option(cur,cur)); sel.value=cur; }
+}
+/* נרמול שם ספק — זהה ללוגיקה שבאפליקציית התפעול */
+const SUP_NOISE={ "בעמ":1,"חברת":1,"חברה":1,"עוסק":1,"מורשה":1,"עמותת":1,"ltd":1,"inc":1,"llc":1,"co":1 };
+function normSupplier(name){
+  let t=String(name==null?"":name).toLowerCase().replace(/["'׳״`]/g,"");
+  t=t.replace(/[^\u0590-\u05FFa-z0-9]+/g," ");
+  return t.split(/\s+/).filter(w=>w&&!SUP_NOISE[w]).sort().join(" ");
+}
+function addNewSupplier(){
+  const raw=prompt("שם הספק החדש:");
+  if(raw===null) return;
+  const name=raw.trim(); if(!name) return;
+  const k=normSupplier(name);
+  const same=supplierNames().find(n=>normSupplier(n)===k);
+  if(same){
+    alert('"'+same+'" כבר קיים ברשימה — נבחר עבורך.');
+    const sel=document.getElementById("f_supplier");
+    if(!supplierNames().includes(same)) sel.add(new Option(same,same));
+    sel.value=same; return;
+  }
+  const near=supplierNames().find(n=>{
+    const a=normSupplier(n), b=k; if(!a||!b) return false;
+    const max=Math.max(a.length,b.length);
+    let d=0, i=0; // בדיקת דמיון גסה: הפרש אורך + תווים שונים
+    const la=a.length, lb=b.length;
+    if(Math.abs(la-lb)>2) return false;
+    for(i=0;i<Math.min(la,lb);i++) if(a[i]!==b[i]) d++;
+    d+=Math.abs(la-lb);
+    return max? (1-d/max)>=0.85 : false;
+  });
+  if(near && !confirm('קיים ספק דומה: "'+near+'".\n\nלהוסיף בכל זאת את "'+name+'" כספק נפרד?')) {
+    const sel=document.getElementById("f_supplier");
+    if(!supplierNames().includes(near)) sel.add(new Option(near,near));
+    sel.value=near; return;
+  }
+  if(!state.suppliers) state.suppliers=[];
+  state.suppliers.push({ name:name, field:"", phone:"", email:"", taxId:"", note:"", aliases:[] });
+  save(); fillSupplierList();
+  document.getElementById("f_supplier").value=name;
+  toast("הספק נוסף למרשם");
 }
 document.getElementById("f_main").addEventListener("change",fillSubSelect);
 document.getElementById("f_date").addEventListener("change",onFormDateChange);
+document.getElementById("newSupplierBtn").onclick=addNewSupplier;
 
 /* השלמה אוטומטית לשדות הזמנת הרכש לפי מילויים קודמים */
 function uniqVals(key){ return [...new Set(state.transactions.map(t=>t[key]).filter(Boolean))].sort(); }
