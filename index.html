@@ -761,6 +761,7 @@ function paceClass(rel){ // rel = actual/relativeBudget
 /* ====== ניווט בין לשוניות ====== */
 document.querySelectorAll("nav button").forEach(b=>{
   b.onclick=()=>{
+    if(typeof isEntryOnly==="function" && isEntryOnly() && b.dataset.tab!=="entry") return;
     document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));
     document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
     b.classList.add("active");
@@ -2010,6 +2011,21 @@ let plView="general";
 const PL_CALC_LABELS={monthly:"חודשי", wh:"לפי ש\"ש", hourly:"שעתי", fixed:"סכום קבוע"};
 /* גישה לגיליון התכנון — רק למשתמשים שברשימה (לפי אימייל ההתחברות) */
 const PLAN_ALLOWED_EMAILS=["guy@rgvb.org.il","guytsuberi1@gmail.com","dovsamuel2@gmail.com"];
+/* משתמשי "הזנה בלבד" — רואים רק את לשונית הזנת החשבונית.
+   הסתרה ברמת הממשק בלבד; נתוני השכר מוגנים בשרת ב-RLS על plan_private. */
+const ENTRY_ONLY_EMAILS=["misrad@rgvb.org.il"];
+function isEntryOnly(){
+  return typeof _userEmail!=="undefined" && !!_userEmail && ENTRY_ONLY_EMAILS.includes(_userEmail.toLowerCase().trim());
+}
+function applyEntryOnly(){
+  if(!isEntryOnly()) return;
+  document.querySelectorAll("nav button[data-tab]").forEach(b=>{
+    if(b.dataset.tab!=="entry") b.style.display="none";
+  });
+  document.querySelectorAll(".tab").forEach(x=>{ if(x.id!=="entry") x.classList.remove("active"); });
+  const sec=document.getElementById("entry"); if(sec) sec.classList.add("active");
+  const eb=document.querySelector('nav button[data-tab="entry"]'); if(eb) eb.classList.add("active");
+}
 function plCanView(){
   return typeof _userEmail!=="undefined" && !!_userEmail && PLAN_ALLOWED_EMAILS.includes(_userEmail.toLowerCase().trim());
 }
@@ -3347,6 +3363,7 @@ async function updateUserBar(){
     if(es && user){
       _userEmail=user.email||"";
       plApplyAccess();
+      applyEntryOnly();
       const ini=userInitials(user);
       es.innerHTML='<div class="usermenu">'
         +'<button class="avatar" id="avatarBtn" aria-label="תפריט משתמש" title="'+esc(_userEmail)+'">'+esc(ini)+'</button>'
